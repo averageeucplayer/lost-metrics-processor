@@ -1,22 +1,24 @@
 use log::{info, warn};
 use lost_metrics_core::models::*;
 use lost_metrics_misc::*;
+use lost_metrics_store::encounter_service::EncounterService;
+use lost_metrics_store::models::CreateEncounter;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 use std::sync::Arc;
 use tokio::task;
-use crate::live::abstractions::{EventEmitter, Payload, Repository};
-use crate::live::stats_api::{PlayerStats, StatsApi};
+use crate::live::abstractions::EventEmitter;
+use crate::live::stats_api::StatsApi;
 
 use super::EncounterState;
 
 impl EncounterState {
-    pub fn save_to_db<EE: EventEmitter, RE: Repository, SA: StatsApi>(
+    pub fn save_to_db<EE: EventEmitter, ES: EncounterService, SA: StatsApi>(
         &mut self,
         client_id: Option<Uuid>,
         stats_api: Arc<Mutex<SA>>,
         manual: bool,
-        repository: Arc<RE>,
+        encounter_service: Arc<ES>,
         event_emitter: Arc<EE>
         ) {
         if !manual {
@@ -108,7 +110,7 @@ impl EncounterState {
                 None
             };
 
-            let payload = Payload {
+            let create_encounter = CreateEncounter {
                 encounter,
                 prev_stagger,
                 damage_log,
@@ -129,7 +131,7 @@ impl EncounterState {
                 skill_cast_log,
             };
 
-            let encounter_id = repository.insert_data(payload)
+            let encounter_id = encounter_service.create(create_encounter)
                 .expect("failed to commit transaction");
             info!("saved to db");
 

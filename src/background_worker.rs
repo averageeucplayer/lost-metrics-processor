@@ -1,8 +1,9 @@
 use std::{cell::RefCell, rc::Rc, sync::{Arc, RwLock}, time::Duration};
 use crate::{constants::LOW_PERFORMANCE_MODE_DURATION, live::{self, trackers::Trackers}};
-use crate::live::{abstractions::{file_system::FileSystem, repository::SqliteRepository, *}, encounter_state::EncounterState, entity_tracker::EntityTracker, flags::{AtomicBoolFlags, Flags}, heartbeat_api::DefaultHeartbeatApi, id_tracker::IdTracker, packet_handler::DefaultPacketHandler, party_tracker::PartyTracker, stats_api::DefaultStatsApi, status_tracker::StatusTracker, StartOptions};
+use crate::live::{abstractions::{file_system::FileSystem, *}, encounter_state::EncounterState, flags::{AtomicBoolFlags, Flags}, heartbeat_api::DefaultHeartbeatApi, packet_handler::DefaultPacketHandler, stats_api::DefaultStatsApi, StartOptions};
 use log::{error, info};
 use anyhow::{Ok, Result};
+use lost_metrics_store::{connection_pool, encounter_service::{self, DefaultEncounterService}, migration_runner::MigrationRunner, repository::SqliteRepository};
 use tokio::sync::Mutex;
 
 pub struct BackgroundWorker {
@@ -25,10 +26,10 @@ impl BackgroundWorker {
 
         let handle = std::thread::spawn(|| {
 
-            let file_system = FileSystem::new();
+            let file_system = DefaultFileSystem::new();
             let executable_directory = file_system.get_executable_directory().unwrap();
             let settings_path = executable_directory.join("settings.json").clone();
-            let settings_manager = DefaultSettingsManager::new(settings_path);
+            let mut settings_manager = DefaultSettingsManager::new(file_system, settings_path);
     
             let mut options = StartOptions {
                 version: env!("CARGO_PKG_VERSION").to_string(),
@@ -62,7 +63,8 @@ impl BackgroundWorker {
     
             let connection_pool = connection_pool::get(&options.database_path);
             let migration_runner = MigrationRunner::new(connection_pool.clone());
-            let repository = Arc::new(SqliteRepository::new(connection_pool.clone()));
+            let repository = SqliteRepository::new(connection_pool.clone());
+            let encounter_service = Arc::new(DefaultEncounterService::new(repository));
     
             match migration_runner.run() {
                 Err(err) => {
@@ -70,7 +72,6 @@ impl BackgroundWorker {
                 },
                 _ => {}
             };
-    
            
             let heartbeat_api = Arc::new(Mutex::new(DefaultHeartbeatApi::new()));
             let stats_api = Arc::new(Mutex::new(DefaultStatsApi::new(options.version.clone())));
@@ -83,10 +84,9 @@ impl BackgroundWorker {
                 local_player_store.clone(),
                 event_emitter.clone(),
                 region_store.clone(),
-                repository.clone(),
+                encounter_service.clone(),
                 stats_api.clone(),
             );
-            // repository.as_ref().setup_db();
                 
             let mut state = EncounterState::new(
                 trackers,
@@ -102,7 +102,7 @@ impl BackgroundWorker {
                 event_listener,
                 region_store,
                 local_player_store,
-                repository,
+                encounter_service,
                 heartbeat_api,
                 stats_api)
                 .map_err(|e| {

@@ -4,7 +4,7 @@ use std::cmp::max;
 use std::default::Default;
 use std::sync::Arc;
 
-use crate::live::abstractions::{EventEmitter, Payload};
+use crate::live::abstractions::EventEmitter;
 use crate::live::utils::*;
 
 use super::EncounterState;

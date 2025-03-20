@@ -1,7 +1,6 @@
 
 use crate::live::encounter_state::EncounterState;
 use crate::live::stats_api::StatsApi;
-use super::abstractions::repository::Repository;
 use super::flags::Flags;
 use super::packet_handler::PacketHandler;
 use super::utils::send_to_ui;
@@ -9,6 +8,8 @@ use super::{abstractions::*, register_listeners};
 use super::heartbeat_api::HeartbeatApi;
 use anyhow::Result;
 use hashbrown::HashMap;
+use lost_metrics_sniffer_stub::decryption::DamageEncryptionHandlerTrait;
+use lost_metrics_store::encounter_service::EncounterService;
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 use std::path::PathBuf;
@@ -26,7 +27,7 @@ pub struct StartOptions {
     pub duration: Duration
 }
 
-pub fn start<FL, PS, PH, EE, EL, RS, LP, RE, HB, SA>(
+pub fn start<FL, PS, PH, EE, EL, RS, LP, ES, HB, SA>(
     flags: Arc<FL>,
     packet_sniffer: PS,
     packet_handler: &mut PH,
@@ -36,7 +37,7 @@ pub fn start<FL, PS, PH, EE, EL, RS, LP, RE, HB, SA>(
     event_listener: Arc<EL>,
     region_store: Arc<RS>,
     local_player_store: Arc<RwLock<LP>>,
-    repository: Arc<RE>,
+    encounter_service: Arc<ES>,
     heartbeat_api: Arc<Mutex<HB>>,
     stats_api: Arc<Mutex<SA>>) 
     -> Result<()> 
@@ -48,7 +49,7 @@ pub fn start<FL, PS, PH, EE, EL, RS, LP, RE, HB, SA>(
         EL: EventListener,
         RS: RegionStore,
         LP: LocalPlayerStore,
-        RE: Repository,
+        ES: EncounterService,
         HB: HeartbeatApi,
         SA: StatsApi
     {
@@ -102,7 +103,7 @@ pub fn start<FL, PS, PH, EE, EL, RS, LP, RE, HB, SA>(
             flags.reset_save();
             
             state.party_info = state.get_party_from_tracker();
-            state.save_to_db(state.client_id, stats_api.clone(), true, repository.clone(), event_emitter.clone());
+            state.save_to_db(state.client_id, stats_api.clone(), true, encounter_service.clone(), event_emitter.clone());
             state.saved = true;
             state.resetting = true;
         }
@@ -162,9 +163,9 @@ mod tests {
     use chrono::Utc;
     use lost_metrics_core::models::Encounter;
     use mockall::predicate::always;
-
+    use mockall::mock;
     use crate::live::{flags::MockFlags, heartbeat_api::MockHeartbeatApi, stats_api::MockStatsApi, test_utils::*, trackers::Trackers};
-
+    use crate::live::test_utils::MockEncounterService;
     use super::*;
 
     #[tokio::test]
@@ -185,7 +186,7 @@ mod tests {
         let region_store = create_and_setup_region_store();
         let local_player_store = create_and_setup_local_player_store();
 
-        let repository = MockRepository::new();
+        let repository = MockEncounterService::new();
         let repository = Arc::new(repository);
         
         let heartbeat_api = MockHeartbeatApi::new();
@@ -254,7 +255,7 @@ mod tests {
         let region_store = create_and_setup_region_store();
         let local_player_store = create_and_setup_local_player_store();
 
-        let repository = MockRepository::new();
+        let repository = MockEncounterService::new();
         let repository = Arc::new(repository);
         
         let heartbeat_api = MockHeartbeatApi::new();
@@ -300,7 +301,7 @@ mod tests {
         let region_store = create_and_setup_region_store();
         let local_player_store = create_and_setup_local_player_store();
 
-        let repository = MockRepository::new();
+        let repository = MockEncounterService::new();
         let repository = Arc::new(repository);
         
         let heartbeat_api = MockHeartbeatApi::new();
@@ -381,7 +382,7 @@ mod tests {
         let region_store = create_and_setup_region_store();
         let local_player_store = create_and_setup_local_player_store();
 
-        let repository = MockRepository::new();
+        let repository = MockEncounterService::new();
         let repository = Arc::new(repository);
         
         let heartbeat_api = MockHeartbeatApi::new();
@@ -435,7 +436,7 @@ mod tests {
         let region_store = create_and_setup_region_store();
         let local_player_store = create_and_setup_local_player_store();
 
-        let repository = MockRepository::new();
+        let repository = MockEncounterService::new();
         let repository = Arc::new(repository);
         
         let heartbeat_api = MockHeartbeatApi::new();
@@ -488,7 +489,7 @@ mod tests {
         let region_store = create_and_setup_region_store();
         let local_player_store = create_and_setup_local_player_store();
 
-        let repository = MockRepository::new();
+        let repository = MockEncounterService::new();
         let repository = Arc::new(repository);
         
         let heartbeat_api = MockHeartbeatApi::new();

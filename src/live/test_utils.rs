@@ -11,6 +11,34 @@ use super::flags::MockFlags;
 use super::StartOptions;
 use super::abstractions::*;
 use super::packet_handler::MockPacketHandler;
+use lost_metrics_store::encounter_service::EncounterService;
+use lost_metrics_sniffer_stub::decryption::DamageEncryptionHandlerTrait;
+use lost_metrics_sniffer_stub::packets::structures::SkillDamageEvent;
+
+#[cfg(test)]
+use mockall::mock;
+
+#[cfg(test)]
+use lost_metrics_store::models::CreateEncounter;
+
+#[cfg(test)]
+mock! {
+    pub DamageEncryptionHandlerTrait {}
+    impl DamageEncryptionHandlerTrait for DamageEncryptionHandlerTrait {
+        fn start(self) -> anyhow::Result<Box<Self>>;
+        fn decrypt_damage_event(&self, event: &mut SkillDamageEvent) -> bool;
+        fn update_zone_instance_id(&self, channel_id: u32);
+    }
+}
+
+
+#[cfg(test)]
+mock! {
+    pub EncounterService {}
+    impl EncounterService for EncounterService {
+        fn create(&self, payload: CreateEncounter) -> anyhow::Result<i64>;
+    }
+}
 
 pub fn create_and_setup_flags() -> Arc<MockFlags> {
     let mut flags = MockFlags::new();

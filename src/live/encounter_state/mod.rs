@@ -14,8 +14,8 @@ mod update_local_player;
 use chrono::Utc;
 use hashbrown::HashMap;
 use lost_metrics_core::models::*;
-use lost_metrics_misc::get_class_from_id;
 use lost_metrics_sniffer_stub::packets::definitions::PKTIdentityGaugeChangeNotify;
+use lost_metrics_store::encounter_service::EncounterService;
 use rsntp::SntpClient;
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
@@ -25,13 +25,9 @@ use std::default::Default;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
-use crate::live::entity_tracker::EntityTracker;
 use crate::live::skill_tracker::SkillTracker;
 use crate::live::utils::*;
-
-use super::abstractions::repository::Repository;
 use super::abstractions::EventEmitter;
-use super::party_tracker::PartyTracker;
 use super::stats_api::StatsApi;
 use super::trackers::Trackers;
 
@@ -52,32 +48,23 @@ pub struct EncounterState {
     pub is_valid_zone: bool,
     pub last_update: Instant,
     pub last_party_update: Instant,
-    prev_stagger: i32,
-
-    damage_log: HashMap<String, Vec<(i64, i64)>>,
-    identity_log: HashMap<String, IdentityLog>,
-    cast_log: HashMap<String, HashMap<u32, Vec<i32>>>,
-
-    boss_hp_log: HashMap<String, Vec<BossHpLog>>,
-
-    stagger_log: Vec<(i32, f32)>,
-    stagger_intervals: Vec<(i32, i32)>,
-
+    pub prev_stagger: i32,
+    pub damage_log: HashMap<String, Vec<(i64, i64)>>,
+    pub identity_log: HashMap<String, IdentityLog>,
+    pub cast_log: HashMap<String, HashMap<u32, Vec<i32>>>,
+    pub boss_hp_log: HashMap<String, Vec<BossHpLog>>,
+    pub stagger_log: Vec<(i32, f32)>,
+    pub stagger_intervals: Vec<(i32, i32)>,
     pub party_info: Vec<Vec<String>>,
     pub raid_difficulty: String,
     pub raid_difficulty_id: u32,
     pub boss_only_damage: bool,
     pub region: Option<String>,
-
     sntp_client: SntpClient,
     ntp_fight_start: i64,
-
     pub rdps_valid: bool,
-
     pub skill_tracker: SkillTracker,
-
     custom_id_map: HashMap<u32, u32>,
-
     pub damage_is_valid: bool,
 }
 
@@ -186,39 +173,34 @@ impl EncounterState {
         self.trackers.borrow().get_party_from_tracker()
     }
 
-    pub fn on_phase_transition<EE : EventEmitter, RE: Repository, SA: StatsApi>(
+    pub fn on_phase_transition<EE : EventEmitter, ES: EncounterService, SA: StatsApi>(
         &mut self,
         client_id: Option<Uuid>,
         phase_code: i32,
         stats_api: Arc<Mutex<SA>>,
-        repository: Arc<RE>,
+        repository: Arc<ES>,
         event_emitter: Arc<EE>
     ) {
         event_emitter
             .emit("phase-transition", phase_code)
             .expect("failed to emit phase-transition");
 
-        match phase_code {
-            0 | 2 | 3 | 4 => {
-                if !self.encounter.current_boss_name.is_empty() {
-                    
-                    let rt = Handle::current();
+        if matches!(phase_code, 0 | 2 | 3 | 4) && !self.encounter.current_boss_name.is_empty() {
+            let rt = Handle::current();
 
-                    rt.block_on(async {
-                        stats_api.lock().await.send_raid_info(self).await;
-                    });
-                   
-                    if phase_code == 0 {
-                        self.is_valid_zone = false;
-                    }
-
-                    self.save_to_db(client_id, stats_api, false, repository, event_emitter);
-                    self.saved = true;
-                }
-                self.resetting = true;
+            rt.block_on(async {
+                stats_api.lock().await.send_raid_info(self).await;
+            });
+            
+            if phase_code == 0 {
+                self.is_valid_zone = false;
             }
-            _ => (),
+
+            self.save_to_db(client_id, stats_api, false, repository, event_emitter);
+            self.saved = true;
         }
+
+        self.resetting = true;
     }
 
     // replace local player
@@ -266,9 +248,6 @@ impl EncounterState {
     }
 
     pub fn on_identity_gain(&mut self, pkt: &PKTIdentityGaugeChangeNotify) {
-        if self.encounter.fight_start == 0 {
-            return;
-        }
 
         if self.encounter.local_player.is_empty() {
             if let Some((_, entity)) = self
@@ -288,17 +267,18 @@ impl EncounterState {
             .entities
             .get_mut(&self.encounter.local_player)
         {
+            let entry = (
+                Utc::now().timestamp_millis(),
+                (
+                    pkt.identity_gauge1,
+                    pkt.identity_gauge2,
+                    pkt.identity_gauge3,
+                ),
+            );
             self.identity_log
                 .entry(entity.name.clone())
                 .or_default()
-                .push((
-                    Utc::now().timestamp_millis(),
-                    (
-                        pkt.identity_gauge1,
-                        pkt.identity_gauge2,
-                        pkt.identity_gauge3,
-                    ),
-                ));
+                .push(entry);
         }
     }
 

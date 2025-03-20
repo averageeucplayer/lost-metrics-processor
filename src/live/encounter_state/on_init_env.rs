@@ -1,9 +1,10 @@
 use lost_metrics_core::models::*;
 use lost_metrics_misc::get_class_from_id;
+use lost_metrics_store::encounter_service::EncounterService;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 use std::sync::Arc;
-use crate::live::abstractions::{EventEmitter, Repository};
+use crate::live::abstractions::EventEmitter;
 use crate::live::stats_api::StatsApi;
 use crate::live::utils::*;
 
@@ -11,12 +12,12 @@ use super::EncounterState;
 
 impl EncounterState {
 
-    pub fn on_init_env<EE : EventEmitter, RE: Repository, SA: StatsApi>(
+    pub fn on_init_env<EE : EventEmitter, ES: EncounterService, SA: StatsApi>(
         &mut self,
         client_id: Option<Uuid>,
         entity: Entity,
         stats_api: Arc<Mutex<SA>>,
-        repository: Arc<RE>,
+        repository: Arc<ES>,
         event_emitter: Arc<EE>) {
         // if not already saved to db, we save again
         if !self.saved && !self.encounter.current_boss_name.is_empty() {

@@ -204,8 +204,8 @@ mod tests {
 
     #[test]
     fn should_truncate_gear_level() {
-        let gear_level = truncate_gear_level(1660.33);
+        let gear_level = truncate_gear_level(1660.3340);
 
-        assert_eq!(gear_level, 1.0);
+        assert_eq!(gear_level, 1660.33);
     }
 }

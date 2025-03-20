@@ -1,4 +1,4 @@
-use std::{fs::File, io::Write, path::PathBuf};
+use std::{fs::{self, File}, io::Write, path::PathBuf};
 use anyhow::*;
 use log::debug;
 use lost_metrics_core::models::Settings;
@@ -6,34 +6,37 @@ use lost_metrics_core::models::Settings;
 #[cfg(test)]
 use mockall::automock;
 
+use super::FileSystem;
+
 #[cfg_attr(test, automock)]
 pub trait SettingsManager {
-    fn get_or_create(&self) -> Result<Settings>;
-    fn write(&self, settings: &Settings) -> Result<()>;
+    fn get_or_create(&mut self) -> Result<Settings>;
+    fn write(&mut self, settings: &Settings) -> Result<()>;
 }
 
-pub struct DefaultSettingsManager {
+pub struct DefaultSettingsManager<FS: FileSystem> {
+    file_system: FS,
     path: PathBuf
 }
 
-impl SettingsManager for DefaultSettingsManager {
-    fn get_or_create(&self) -> Result<Settings> {
+impl<FS: FileSystem> SettingsManager for DefaultSettingsManager<FS> {
+    fn get_or_create(&mut self) -> Result<Settings> {
 
-        if self.path.exists() {
-            let file = File::open(&self.path)?;
-            let settings = serde_json::from_reader(&file)?;
+        if self.file_system.exists(&self.path) {
+            let file = self.file_system.get_reader(&self.path)?;
+            let settings = serde_json::from_reader(file)?;
             return Ok(settings);
         }
 
-        let file = File::create(&self.path)?;
+        let file = self.file_system.get_writer(&self.path)?;
         let settings = Settings::default();
         serde_json::to_writer(file, &settings)?;
 
         Ok(settings)
     }
 
-    fn write(&self, settings: &Settings) -> Result<()> {
-        let mut file = File::create(&self.path)?;
+    fn write(&mut self, settings: &Settings) -> Result<()> {
+        let mut file = self.file_system.get_writer(&self.path)?;
         let json_str = serde_json::to_string_pretty(&settings)?;
         let bytes = json_str.as_bytes();
 
@@ -43,9 +46,9 @@ impl SettingsManager for DefaultSettingsManager {
     }
 }
 
-impl DefaultSettingsManager {
-    pub fn new(path: PathBuf) -> Self {
-        Self { path }
+impl<FS: FileSystem> DefaultSettingsManager<FS> {
+    pub fn new(file_system: FS, path: PathBuf) -> Self {
+        Self { file_system, path }
     }
 }
 
@@ -54,6 +57,8 @@ mod tests {
     use std::{env, path::PathBuf, time::{SystemTime, UNIX_EPOCH}};
 
     use lost_metrics_core::models::Settings;
+
+    use crate::live::abstractions::MemoryFileSystem;
 
     use super::{DefaultSettingsManager, SettingsManager};
 
@@ -72,19 +77,19 @@ mod tests {
     fn should_create_settings() {
         let path = get_semi_random_settings_path();
 
-        let settings_manager = DefaultSettingsManager::new(path.clone());
+        let file_system = MemoryFileSystem::new();
+        let mut settings_manager = DefaultSettingsManager::new(file_system, path.clone());
         let settings = settings_manager.get_or_create().unwrap();
 
         assert_eq!(settings.general.boss_only_damage, false);
-
-        std::fs::remove_file(path).unwrap();
     }
 
     #[test]
     fn should_save_settings() {
         let path = get_semi_random_settings_path();
 
-        let settings_manager = DefaultSettingsManager::new(path.clone());
+        let file_system = MemoryFileSystem::new();
+        let mut settings_manager = DefaultSettingsManager::new(file_system, path.clone());
         let mut settings = Settings::default();
         settings.general.hide_names = true;
 
@@ -92,7 +97,5 @@ mod tests {
         let settings = settings_manager.get_or_create().unwrap();
 
         assert_eq!(settings.general.hide_names, true);
-
-        std::fs::remove_file(path).unwrap();
     }
 }

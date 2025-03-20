@@ -922,7 +922,6 @@ dependencies = [
 [[package]]
 name = "lost-metrics-core"
 version = "0.1.0"
-source = "git+https://github.com/averageeucplayer/lost-metrics-core?branch=main#56fd4f4d99d0335123db8d412965754b9a822093"
 dependencies = [
  "bitflags",
  "chrono",
@@ -938,7 +937,6 @@ dependencies = [
 [[package]]
 name = "lost-metrics-data"
 version = "0.1.0"
-source = "git+https://github.com/averageeucplayer/lost-metrics-data?branch=main#e3af0b8cdf40a11b3453965c6e9d072c05141293"
 dependencies = [
  "hashbrown 0.15.2",
  "lost-metrics-core",
@@ -950,7 +948,6 @@ dependencies = [
 [[package]]
 name = "lost-metrics-misc"
 version = "0.1.0"
-source = "git+https://github.com/averageeucplayer/lost-metrics-misc?branch=main#e81b46a758919ea3ed941d8da402bd366809b97e"
 dependencies = [
  "anyhow",
  "flate2",
@@ -976,6 +973,7 @@ dependencies = [
  "lost-metrics-data",
  "lost-metrics-misc",
  "lost-metrics-sniffer-stub",
+ "lost-metrics-store",
  "mockall",
  "moka",
  "r2d2",
@@ -992,11 +990,27 @@ dependencies = [
 [[package]]
 name = "lost-metrics-sniffer-stub"
 version = "0.1.0"
-source = "git+https://github.com/averageeucplayer/lost-metrics-sniffer-stub?branch=main#f9547852196525ee84ce4e871d2d52405373ea84"
 dependencies = [
  "anyhow",
  "bincode",
  "once_cell",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "lost-metrics-store"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "hashbrown 0.15.2",
+ "log",
+ "lost-metrics-core",
+ "lost-metrics-misc",
+ "r2d2",
+ "r2d2_sqlite",
+ "rusqlite",
  "serde",
  "serde_json",
 ]

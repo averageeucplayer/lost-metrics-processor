@@ -4,6 +4,7 @@ use crate::live::flags::Flags;
 use crate::live::stats_api::StatsApi;
 use crate::live::utils::parse_pkt1;
 use anyhow::Ok;
+use log::*;
 use lost_metrics_sniffer_stub::packets::definitions::*;
 use lost_metrics_store::encounter_service::EncounterService;
 
@@ -17,12 +18,16 @@ where
     LP: LocalPlayerStore,
     EE: EventEmitter,
     ES: EncounterService {
-    pub fn on_counterattack(&self, data: &[u8], state: &mut EncounterState) -> anyhow::Result<()> {
-        let packet = parse_pkt1(&data, PKTCounterAttackNotify::new)?;
-        let source_id = packet.source_id;
-        
-        if let Some(entity) = self.trackers.borrow().entity_tracker.entities.get(&source_id) {
-            state.on_counterattack(entity);
+    pub fn on_death(&self, data: &[u8], state: &mut EncounterState) -> anyhow::Result<()> {
+
+        let packet = parse_pkt1(&data, PKTDeathNotify::new)?;
+
+        if let Some(entity) = self.trackers.borrow().entity_tracker.entities.get(&packet.target_id) {
+            info!(
+                "death: {}, {}, {}",
+                entity.name, entity.entity_type, entity.id
+            );
+            state.on_death(entity);
         }
 
         Ok(())
@@ -31,20 +36,20 @@ where
 
 #[cfg(test)]
 mod tests {
-    use lost_metrics_sniffer_stub::packets::{definitions::PKTCounterAttackNotify, opcodes::Pkt};
+    use lost_metrics_sniffer_stub::packets::opcodes::Pkt;
     use tokio::runtime::Handle;
     use crate::live::{packet_handler::*, test_utils::create_start_options};
     use crate::live::packet_handler::test_utils::PacketHandlerBuilder;
 
     #[tokio::test]
-    async fn should_update_stats_when_counter() {
+    async fn should_update_entity_on_player_death() {
         let options = create_start_options();
         let mut packet_handler_builder = PacketHandlerBuilder::new();
         let rt = Handle::current();
 
-        let opcode = Pkt::CounterAttackNotify;
-        let data = PKTCounterAttackNotify {
-            source_id: 1
+        let opcode = Pkt::DeathNotify;
+        let data = PKTDeathNotify {
+            target_id: 1
         };
         let data = data.encode().unwrap();
 
@@ -54,6 +59,8 @@ mod tests {
         let (mut state, mut packet_handler) = packet_handler_builder.build();
         packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
     
-        assert_eq!(state.encounter.entities.get(&entity_name).unwrap().skill_stats.counters, 1);
+        let actual = state.encounter.entities.get(&entity_name).unwrap();
+        assert_eq!(actual.is_dead, true);
+        assert_eq!(actual.current_hp, 0);
     }
 }

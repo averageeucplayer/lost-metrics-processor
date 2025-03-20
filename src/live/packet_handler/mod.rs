@@ -1,17 +1,41 @@
 mod on_counterattack;
-
+mod on_death;
+mod on_identity_change;
+mod on_init_env;
+mod on_init_pc;
+mod on_new_pc;
+mod on_new_npc;
+mod on_new_npc_summon;
+mod on_new_projectile;
+mod on_new_trap;
+mod on_raid_begin;
+mod on_raid_boss_kill;
+mod on_raid_result;
+mod on_remove_object;
+mod on_skill_cast;
+mod on_skill_start;
+mod on_skill_damage_abnormal;
+mod on_skill_damage;
+mod on_party_info;
+mod on_party_leave;
+mod on_party_status_effect_add;
+mod on_party_status_effect_remove;
+mod on_party_status_effect_result;
+mod on_status_effect_add;
+mod on_status_effect_remove;
+mod on_trigger_boss_battle_status;
+mod on_trigger_start;
+mod on_zone_member_load;
+mod on_zone_object_unpublish;
+mod on_status_effect_sync;
+mod on_troop_member_update;
+mod on_new_transit;
 #[cfg(test)]
 mod test_utils;
 
 use crate::live::encounter_state::EncounterState;
-use crate::live::entity_tracker::EntityTracker ;
-use crate::live::id_tracker::IdTracker;
-use crate::live::party_tracker::PartyTracker;
 use crate::live::stats_api::StatsApi;
-use crate::live::status_tracker::{
-    get_status_effect_value,
-    StatusTracker,
-};
+use crate::live::status_tracker::get_status_effect_value;
 use crate::live::utils::get_current_and_max_hp;
 use super::trackers::Trackers;
 use super::utils::{on_shield_change, parse_pkt};
@@ -19,19 +43,20 @@ use super::{abstractions::*, StartOptions};
 use anyhow::Ok;
 use chrono::Utc;
 use hashbrown::HashMap;
-use log::{info, warn};
+use log::*;
 use lost_metrics_core::models::*;
 use lost_metrics_data::VALID_ZONES;
 use lost_metrics_misc::get_class_from_id;
-use lost_metrics_sniffer_stub::decryption::{DamageEncryptionHandler, DamageEncryptionHandlerInner};
+use lost_metrics_sniffer_stub::decryption::{DamageEncryptionHandler, DamageEncryptionHandlerTrait};
 use lost_metrics_sniffer_stub::packets::definitions::*;
 use lost_metrics_sniffer_stub::packets::opcodes::Pkt;
+use lost_metrics_store::encounter_service::EncounterService;
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use super::flags::Flags;
 
@@ -40,37 +65,37 @@ use mockall::automock;
 
 #[cfg_attr(test, automock)]
 pub trait PacketHandler {
-    fn set_damage_handler(&mut self, handler: DamageEncryptionHandlerInner);
+    fn set_damage_handler(&mut self, handler: Box<DamageEncryptionHandler>);
     fn handle(&mut self, opcode: Pkt, data: &[u8], state: &mut EncounterState, options: &StartOptions, rt: Handle) -> anyhow::Result<()>;
 }
 
-pub struct DefaultPacketHandler<FL, SA, RS, LP, EE, RE>
+pub struct DefaultPacketHandler<FL, SA, RS, LP, EE, ES>
 where
     FL: Flags,
     SA: StatsApi,
     RS: RegionStore,
     LP: LocalPlayerStore,
     EE: EventEmitter,
-    RE: Repository
+    ES: EncounterService
 {
     trackers: Rc<RefCell<Trackers>>,
-    damage_handler: Option<DamageEncryptionHandlerInner>,
+    damage_handler: Option<Box<DamageEncryptionHandler>>,
     region_store: Arc<RS>,
     local_player_store: Arc<RwLock<LP>>,
     event_emitter: Arc<EE>,
-    repository: Arc<RE>,
+    repository: Arc<ES>,
     stats_api: Arc<Mutex<SA>>,
     flags: Arc<FL>
 }
 
-impl<FL, SA, RS, LP, EE, RE> PacketHandler for DefaultPacketHandler<FL, SA, RS, LP, EE, RE>
+impl<FL, SA, RS, LP, EE, ES> PacketHandler for DefaultPacketHandler<FL, SA, RS, LP, EE, ES>
 where
     FL: Flags,
     SA: StatsApi,
     RS: RegionStore,
     LP: LocalPlayerStore,
     EE: EventEmitter,
-    RE: Repository
+    ES: EncounterService
 {
     fn handle(
         &mut self,
@@ -82,77 +107,10 @@ where
 
         match opcode {
             Pkt::CounterAttackNotify => self.on_counterattack(data, state)?,
-            Pkt::DeathNotify => {
-                if let Some(pkt) = parse_pkt(&data, PKTDeathNotify::new) {
-                    if let Some(entity) = self.trackers.borrow().entity_tracker.entities.get(&pkt.target_id) {
-                        info!(
-                            "death: {}, {}, {}",
-                            entity.name, entity.entity_type, entity.id
-                        );
-                        state.on_death(entity);
-                    }
-                }
-            }
-            Pkt::IdentityGaugeChangeNotify => {
-                if let Some(pkt) = parse_pkt(
-                    &data,
-                    PKTIdentityGaugeChangeNotify::new) {
-                    state.on_identity_gain(&pkt);
-                    if self.flags.can_emit_details() {
-                        self.event_emitter
-                            .emit(
-                            "identity-update",
-                            Identity {
-                                gauge1: pkt.identity_gauge1,
-                                gauge2: pkt.identity_gauge2,
-                                gauge3: pkt.identity_gauge3,
-                            },
-                        )?;
-                    }
-                }
-            }
-            Pkt::InitEnv => {
-                // three methods of getting local player info
-                // 1. MigrationExecute    + InitEnv      + PartyInfo
-                // 2. Cached Local Player + InitEnv      + PartyInfo
-                //    > character_id        > entity_id    > player_info
-                // 3. InitPC
-
-                if let Some(pkt) = parse_pkt(&data, PKTInitEnv::new) {
-                    self.trackers.borrow().party_tracker.borrow_mut().reset_party_mappings();
-                    state.raid_difficulty = "".to_string();
-                    state.raid_difficulty_id = 0;
-                    state.damage_is_valid = true;
-                    state.party_cache = None;
-                    state.party_map_cache = HashMap::new();
-                    let entity = self.trackers.borrow_mut().entity_tracker.init_env(pkt);
-                    state.on_init_env(state.client_id, entity, self.stats_api.clone(), self.repository.clone(), self.event_emitter.clone());
-                    state.is_valid_zone = false;
-                    
-                    state.region = self.region_store.get();
-
-                    info!("region: {:?}", state.region);
-                }
-            }
-            Pkt::InitPC => {
-                if let Some(pkt) = parse_pkt(&data, PKTInitPC::new) {
-                    let (hp, max_hp) = get_current_and_max_hp(&pkt.stat_pairs);
-                    let entity = self.trackers.borrow_mut().entity_tracker.init_pc(pkt);
-                    info!(
-                        "local player: {}, {}, {}, eid: {}, id: {}",
-                        entity.name,
-                        get_class_from_id(&entity.class_id),
-                        entity.gear_level,
-                        entity.id,
-                        entity.character_id
-                    );
-
-                    self.local_player_store.write().unwrap().write(entity.name.clone(), entity.character_id)?;
-                    // write_local_players(&local_info, &local_player_path)?;
-
-                    state.on_init_pc(entity, hp, max_hp)
-                }
-            }
+            Pkt::DeathNotify => self.on_death(data, state)?,
+            Pkt::IdentityGaugeChangeNotify => self.on_identity_change(data, state)?,
+            Pkt::InitEnv => self.on_init_env(data, state)?,
+            Pkt::InitPC => self.on_init_pc(data, state)?,
             Pkt::NewPC => {
                 if let Some(pkt) = parse_pkt(&data, PKTNewPC::new) {
                     let (hp, max_hp) = get_current_and_max_hp(&pkt.pc_struct.stat_pairs);
@@ -324,7 +282,7 @@ where
                 }
             }
             Pkt::SkillDamageAbnormalMoveNotify => {
-                if now - state.raid_end_cd < Duration::from_secs(10) {
+                if now - state.raid_end_cd < options.raid_end_capture_timeout {
                     info!("ignoring damage - SkillDamageAbnormalMoveNotify");
                     return Ok(());
                 }
@@ -777,37 +735,33 @@ where
                     }
                 }
             }
-            Pkt::NewTransit => {
-                if let Some(pkt) = parse_pkt(&data, PKTNewTransit::new) {
-                    self.damage_handler.as_ref().unwrap().update_zone_instance_id(pkt.channel_id);
-                }
-            }
+            Pkt::NewTransit => self.on_new_transit(data)?,
             _ => {}
         }
 
         Ok(())
     }
     
-    fn set_damage_handler(&mut self, handler:DamageEncryptionHandlerInner) {
+    fn set_damage_handler(&mut self, handler: Box<DamageEncryptionHandler>) {
         self.damage_handler = Some(handler);
     }
 }
 
-impl<FL, SA, RS, LP, EE, RE> DefaultPacketHandler<FL, SA, RS, LP, EE, RE>
+impl<FL, SA, RS, LP, EE, ES> DefaultPacketHandler<FL, SA, RS, LP, EE, ES>
 where
     FL: Flags,
     SA: StatsApi,
     RS: RegionStore,
     LP: LocalPlayerStore,
     EE: EventEmitter,
-    RE: Repository {
+    ES: EncounterService {
     pub fn new(
         flags: Arc<FL>,
         trackers: Rc<RefCell<Trackers>>,
         local_player_store: Arc<RwLock<LP>>,
         event_emitter: Arc<EE>,
         region_store: Arc<RS>,
-        repository: Arc<RE>,
+        repository: Arc<ES>,
         stats_api: Arc<Mutex<SA>>) -> Self {
         
 

@@ -4,6 +4,7 @@ use crate::live::flags::Flags;
 use crate::live::stats_api::StatsApi;
 use crate::live::utils::parse_pkt1;
 use anyhow::Ok;
+use lost_metrics_sniffer_stub::decryption::DamageEncryptionHandlerTrait;
 use lost_metrics_sniffer_stub::packets::definitions::*;
 use lost_metrics_store::encounter_service::EncounterService;
 
@@ -17,13 +18,10 @@ where
     LP: LocalPlayerStore,
     EE: EventEmitter,
     ES: EncounterService {
-    pub fn on_counterattack(&self, data: &[u8], state: &mut EncounterState) -> anyhow::Result<()> {
-        let packet = parse_pkt1(&data, PKTCounterAttackNotify::new)?;
-        let source_id = packet.source_id;
-        
-        if let Some(entity) = self.trackers.borrow().entity_tracker.entities.get(&source_id) {
-            state.on_counterattack(entity);
-        }
+    pub fn on_new_transit(&self, data: &[u8]) -> anyhow::Result<()> {
+      
+        let packet = parse_pkt1(&data, PKTNewTransit::new)?;
+        self.damage_handler.as_ref().unwrap().update_zone_instance_id(packet.channel_id);
 
         Ok(())
     }
@@ -35,25 +33,26 @@ mod tests {
     use tokio::runtime::Handle;
     use crate::live::{packet_handler::*, test_utils::create_start_options};
     use crate::live::packet_handler::test_utils::PacketHandlerBuilder;
+    use crate::live::test_utils::MockDamageEncryptionHandlerTrait;
 
     #[tokio::test]
-    async fn should_update_stats_when_counter() {
+    async fn should_call_damage_handler() {
         let options = create_start_options();
         let mut packet_handler_builder = PacketHandlerBuilder::new();
         let rt = Handle::current();
 
-        let opcode = Pkt::CounterAttackNotify;
-        let data = PKTCounterAttackNotify {
-            source_id: 1
+        let opcode = Pkt::NewTransit;
+        let data = PKTNewTransit {
+            channel_id: 1
         };
         let data = data.encode().unwrap();
-
-        let entity_name = "test".to_string();
-        packet_handler_builder.create_player(1, entity_name.clone());
         
         let (mut state, mut packet_handler) = packet_handler_builder.build();
+
+        let damage_handler = MockDamageEncryptionHandlerTrait::new();
+        let damage_handler = Box::new(damage_handler);
+
+        packet_handler.set_damage_handler(damage_handler);
         packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
-    
-        assert_eq!(state.encounter.entities.get(&entity_name).unwrap().skill_stats.counters, 1);
     }
 }
