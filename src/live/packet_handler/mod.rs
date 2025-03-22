@@ -65,13 +65,13 @@ use mockall::automock;
 
 #[cfg_attr(test, automock)]
 pub trait PacketHandler {
-    fn set_damage_handler(&mut self, handler: Box<DamageEncryptionHandler>);
     fn handle(&mut self, opcode: Pkt, data: &[u8], state: &mut EncounterState, options: &StartOptions, rt: Handle) -> anyhow::Result<()>;
 }
 
-pub struct DefaultPacketHandler<FL, SA, RS, LP, EE, ES>
+pub struct DefaultPacketHandler<FL, DH, SA, RS, LP, EE, ES>
 where
     FL: Flags,
+    DH: DamageEncryptionHandlerTrait,
     SA: StatsApi,
     RS: RegionStore,
     LP: LocalPlayerStore,
@@ -79,7 +79,7 @@ where
     ES: EncounterService
 {
     trackers: Rc<RefCell<Trackers>>,
-    damage_handler: Option<Box<DamageEncryptionHandler>>,
+    damage_encryption_handler: Arc<DH>,
     region_store: Arc<RS>,
     local_player_store: Arc<RwLock<LP>>,
     event_emitter: Arc<EE>,
@@ -88,9 +88,10 @@ where
     flags: Arc<FL>
 }
 
-impl<FL, SA, RS, LP, EE, ES> PacketHandler for DefaultPacketHandler<FL, SA, RS, LP, EE, ES>
+impl<FL, DH, SA, RS, LP, EE, ES> PacketHandler for DefaultPacketHandler<FL, DH, SA, RS, LP, EE, ES>
 where
     FL: Flags,
+    DH: DamageEncryptionHandlerTrait,
     SA: StatsApi,
     RS: RegionStore,
     LP: LocalPlayerStore,
@@ -307,7 +308,7 @@ where
                     };
 
                     for mut event in pkt.skill_damage_abnormal_move_events.into_iter() {
-                        if !self.damage_handler.as_ref().unwrap().decrypt_damage_event(&mut event.skill_damage_event) {
+                        if !self.damage_encryption_handler.decrypt_damage_event(&mut event.skill_damage_event) {
                             state.damage_is_valid = false;
                             continue;
                         }
@@ -372,7 +373,7 @@ where
                     };
 
                     for mut event in pkt.skill_damage_events.into_iter() {
-                        if !self.damage_handler.as_ref().unwrap().decrypt_damage_event(&mut event) {
+                        if !self.damage_encryption_handler.decrypt_damage_event(&mut event) {
                             state.damage_is_valid = false;
                             continue;
                         }
@@ -741,15 +742,12 @@ where
 
         Ok(())
     }
-    
-    fn set_damage_handler(&mut self, handler: Box<DamageEncryptionHandler>) {
-        self.damage_handler = Some(handler);
-    }
 }
 
-impl<FL, SA, RS, LP, EE, ES> DefaultPacketHandler<FL, SA, RS, LP, EE, ES>
+impl<FL, DH, SA, RS, LP, EE, ES> DefaultPacketHandler<FL, DH, SA, RS, LP, EE, ES>
 where
     FL: Flags,
+    DH: DamageEncryptionHandlerTrait,
     SA: StatsApi,
     RS: RegionStore,
     LP: LocalPlayerStore,
@@ -757,6 +755,7 @@ where
     ES: EncounterService {
     pub fn new(
         flags: Arc<FL>,
+        damage_encryption_handler: Arc<DH>,
         trackers: Rc<RefCell<Trackers>>,
         local_player_store: Arc<RwLock<LP>>,
         event_emitter: Arc<EE>,
@@ -767,8 +766,8 @@ where
 
         Self {
             flags,
+            damage_encryption_handler,
             local_player_store,
-            damage_handler: None,
             event_emitter,
             region_store,
             repository,

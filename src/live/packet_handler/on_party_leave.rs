@@ -6,14 +6,16 @@ use crate::live::utils::parse_pkt1;
 use anyhow::Ok;
 use hashbrown::HashMap;
 use log::*;
+use lost_metrics_sniffer_stub::decryption::DamageEncryptionHandlerTrait;
 use lost_metrics_sniffer_stub::packets::definitions::*;
 use lost_metrics_store::encounter_service::EncounterService;
 
 use super::DefaultPacketHandler;
 
-impl<FL, SA, RS, LP, EE, ES> DefaultPacketHandler<FL, SA, RS, LP, EE, ES>
+impl<FL, DH, SA, RS, LP, EE, ES> DefaultPacketHandler<FL, DH, SA, RS, LP, EE, ES>
 where
     FL: Flags,
+    DH: DamageEncryptionHandlerTrait,
     SA: StatsApi,
     RS: RegionStore,
     LP: LocalPlayerStore,

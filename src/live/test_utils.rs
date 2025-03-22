@@ -25,7 +25,7 @@ use lost_metrics_store::models::CreateEncounter;
 mock! {
     pub DamageEncryptionHandlerTrait {}
     impl DamageEncryptionHandlerTrait for DamageEncryptionHandlerTrait {
-        fn start(self) -> anyhow::Result<Box<Self>>;
+        fn start(&self) -> anyhow::Result<()>;
         fn decrypt_damage_event(&self, event: &mut SkillDamageEvent) -> bool;
         fn update_zone_instance_id(&self, channel_id: u32);
     }
@@ -83,10 +83,6 @@ pub fn create_and_setup_event_listener() -> Arc<MockEventListener> {
 
 pub fn create_and_setup_packet_handler() -> MockPacketHandler {
     let mut packet_handler = MockPacketHandler::new();
-
-    packet_handler
-        .expect_set_damage_handler()
-        .return_once(|_| {});
 
     packet_handler
         .expect_handle()

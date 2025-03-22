@@ -29,20 +29,5 @@ lost-metrics-sniffer-stub = { git = "https://github.com/averageeucplayer/lost-me
 lost-metrics-misc = { git = "https://github.com/averageeucplayer/lost-metrics-misc", branch="main" }
 lost-metrics-store = { git = "https://github.com/averageeucplayer/lost-metrics-store", branch="main" }
 
-[patch."https://github.com/averageeucplayer/lost-metrics-core"]
-lost-metrics-core = { path= "../lost-metrics-core" }
-
-[patch."https://github.com/averageeucplayer/lost-metrics-data"]
-lost-metrics-data = { path= "../lost-metrics-data" }
-
-[patch."https://github.com/averageeucplayer/lost-metrics-sniffer-stub"]
-lost-metrics-sniffer-stub = { path= "../lost-metrics-sniffer-stub" }
-
-[patch."https://github.com/averageeucplayer/lost-metrics-misc"]
-lost-metrics-misc = { path= "../lost-metrics-misc" }
-
-[patch."https://github.com/averageeucplayer/lost-metrics-store"]
-lost-metrics-store = { path= "../lost-metrics-store" }
-
 [dev-dependencies]
 mockall = "0.13.1"

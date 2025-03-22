@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc, sync::{Arc, RwLock}};
 use crate::live::{abstractions::*, encounter_state::EncounterState, flags::MockFlags, packet_handler::*, stats_api::MockStatsApi, trackers::Trackers};
-use crate::live::test_utils::MockEncounterService;
+use crate::live::test_utils::*;
 use lost_metrics_sniffer_stub::packets::definitions::{PKTNewPC, PKTNewPCInner};
 use serde::Serialize;
 use std::fmt::Debug;
@@ -24,6 +24,7 @@ pub fn create_random_pc(player_id: u64, name: String) -> PKTNewPC {
 pub struct PacketHandlerBuilder {
     trackers: Rc<RefCell<Trackers>>,
     state: EncounterState,
+    damage_encryption_handler: MockDamageEncryptionHandlerTrait,
     event_emitter: MockEventEmitter,
     region_store: MockRegionStore,
     flags: MockFlags,
@@ -32,6 +33,7 @@ pub struct PacketHandlerBuilder {
 impl PacketHandlerBuilder {
     pub fn new() -> Self {
         let trackers = Trackers::new();
+        let damage_encryption_handler = MockDamageEncryptionHandlerTrait::new();
         let trackers = Rc::new(RefCell::new(trackers));
         let state = EncounterState::new(trackers.clone(), "0.0.1".into());
         let event_emitter = MockEventEmitter::new();
@@ -40,6 +42,7 @@ impl PacketHandlerBuilder {
 
         Self {
             trackers,
+            damage_encryption_handler,
             state,
             region_store,
             event_emitter,
@@ -76,6 +79,7 @@ impl PacketHandlerBuilder {
     pub fn build(self) -> 
     (EncounterState, DefaultPacketHandler<
         MockFlags,
+        MockDamageEncryptionHandlerTrait,
         MockStatsApi,
         MockRegionStore,
         MockLocalPlayerStore,
@@ -87,15 +91,17 @@ impl PacketHandlerBuilder {
         let repository = Arc::new(MockEncounterService::new());
         let stats_api = Arc::new(Mutex::new(MockStatsApi::new()));
         let flags = Arc::new(self.flags);
+        let damage_encryption_handler= Arc::new(self.damage_encryption_handler);
 
         let packet_handler = DefaultPacketHandler::new(
             flags.clone(),
+            damage_encryption_handler,
             self.trackers.clone(),
-            local_player_store.clone(),
-            event_emitter.clone(),
-            region_store.clone(),
-            repository.clone(),
-            stats_api.clone(),
+            local_player_store,
+            event_emitter,
+            region_store,
+            repository,
+            stats_api
         );
 
         (self.state, packet_handler)

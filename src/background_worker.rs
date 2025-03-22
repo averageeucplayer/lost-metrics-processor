@@ -3,6 +3,7 @@ use crate::{constants::LOW_PERFORMANCE_MODE_DURATION, live::{self, trackers::Tra
 use crate::live::{abstractions::{file_system::FileSystem, *}, encounter_state::EncounterState, flags::{AtomicBoolFlags, Flags}, heartbeat_api::DefaultHeartbeatApi, packet_handler::DefaultPacketHandler, stats_api::DefaultStatsApi, StartOptions};
 use log::{error, info};
 use anyhow::{Ok, Result};
+use lost_metrics_sniffer_stub::decryption::DamageEncryptionHandler;
 use lost_metrics_store::{connection_pool, encounter_service::{self, DefaultEncounterService}, migration_runner::MigrationRunner, repository::SqliteRepository};
 use tokio::sync::Mutex;
 
@@ -78,8 +79,10 @@ impl BackgroundWorker {
             let packet_sniffer = PacketSnifferStub::new();
             let trackers = Rc::new(RefCell::new(Trackers::new()));
     
+            let damage_encryption_handler = Arc::new(DamageEncryptionHandler::new());
             let mut packet_handler = DefaultPacketHandler::new(
                 flags.clone(),
+                damage_encryption_handler.clone(),
                 trackers.clone(),
                 local_player_store.clone(),
                 event_emitter.clone(),
@@ -96,6 +99,7 @@ impl BackgroundWorker {
                 flags,
                 packet_sniffer,
                 &mut packet_handler,
+                damage_encryption_handler,
                 &mut state,
                 options,
                 event_emitter,

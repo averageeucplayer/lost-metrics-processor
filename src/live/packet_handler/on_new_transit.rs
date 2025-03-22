@@ -10,18 +10,19 @@ use lost_metrics_store::encounter_service::EncounterService;
 
 use super::DefaultPacketHandler;
 
-impl<FL, SA, RS, LP, EE, ES> DefaultPacketHandler<FL, SA, RS, LP, EE, ES>
+impl<FL, DH, SA, RS, LP, EE, ES> DefaultPacketHandler<FL, DH, SA, RS, LP, EE, ES>
 where
     FL: Flags,
+    DH: DamageEncryptionHandlerTrait,
     SA: StatsApi,
     RS: RegionStore,
     LP: LocalPlayerStore,
     EE: EventEmitter,
     ES: EncounterService {
-    pub fn on_new_transit(&self, data: &[u8]) -> anyhow::Result<()> {
+    pub fn on_new_transit(&mut self, data: &[u8]) -> anyhow::Result<()> {
       
         let packet = parse_pkt1(&data, PKTNewTransit::new)?;
-        self.damage_handler.as_ref().unwrap().update_zone_instance_id(packet.channel_id);
+        self.damage_encryption_handler.update_zone_instance_id(packet.channel_id);
 
         Ok(())
     }
@@ -49,10 +50,10 @@ mod tests {
         
         let (mut state, mut packet_handler) = packet_handler_builder.build();
 
-        let damage_handler = MockDamageEncryptionHandlerTrait::new();
-        let damage_handler = Box::new(damage_handler);
+        // let damage_handler = MockDamageEncryptionHandlerTrait::new();
+        // let damage_handler = Box::new(damage_handler);
 
-        packet_handler.set_damage_handler(damage_handler);
+        // packet_handler.set_damage_handler(damage_handler);
         packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
     }
 }
