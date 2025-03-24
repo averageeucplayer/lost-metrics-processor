@@ -38,7 +38,11 @@ where
         state.party_cache = None;
         state.party_map_cache = HashMap::new();
         let entity = self.trackers.borrow_mut().entity_tracker.init_env(packet);
-        state.on_init_env(state.client_id, entity, self.stats_api.clone(), self.repository.clone(), self.event_emitter.clone());
+        state.on_init_env(
+            state.client_id,
+            entity, self.stats_api.clone(),
+            self.encounter_service.clone(),
+            self.event_emitter.clone());
         state.is_valid_zone = false;
         
         state.region = self.region_store.get();
@@ -74,6 +78,38 @@ mod tests {
         packet_handler_builder.create_player(1, entity_name.clone());
         
         let (mut state, mut packet_handler) = packet_handler_builder.build();
+        packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
+
+    }
+
+    #[tokio::test]
+    async fn should_save_to_db() {
+        let options = create_start_options();
+        let mut packet_handler_builder = PacketHandlerBuilder::new();
+        packet_handler_builder.ensure_event_called::<&str>("zone-change".into());
+        packet_handler_builder.ensure_region_getter_called("EUC".into());
+        let rt = Handle::current();
+
+        let opcode = Pkt::InitEnv;
+        let data = PKTInitEnv {
+            player_id: 1,
+        };
+        let data = data.encode().unwrap();
+
+        let entity_name = "test".to_string();
+        let boss_name = "Thaemine the Lightqueller";
+        packet_handler_builder.create_player(1, entity_name.clone());
+        packet_handler_builder.create_npc(2, boss_name);
+        
+        let (mut state, mut packet_handler) = packet_handler_builder.build();
+
+        let boss_entity_stats = state.encounter.entities.get_mut(boss_name).unwrap();
+        boss_entity_stats.current_hp = 0;
+        let player_entity_stats = state.encounter.entities.get_mut(&entity_name).unwrap();
+        player_entity_stats.damage_stats.damage_dealt = 1000;
+        state.encounter.current_boss_name = boss_name.into();
+        state.encounter.fight_start = Utc::now().timestamp_millis();
+
         packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
 
     }

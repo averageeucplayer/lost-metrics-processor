@@ -23,7 +23,14 @@ where
     ES: EncounterService {
     pub fn on_remove_object(&self, data: &[u8], state: &mut EncounterState) -> anyhow::Result<()> {
 
-        
+        let packet = parse_pkt1(&data, PKTRemoveObject::new)?;
+
+        for upo in packet.unpublished_objects {
+            self.trackers.borrow_mut().entity_tracker.entities.remove(&upo.object_id);
+            self.trackers.borrow().status_tracker
+                .borrow_mut()
+                .remove_local_object(upo.object_id);
+        }
 
         Ok(())
     }
@@ -37,7 +44,22 @@ mod tests {
     use crate::live::packet_handler::test_utils::PacketHandlerBuilder;
 
     #[tokio::test]
-    async fn test() {
+    async fn should_remove_entities_from_tracker() {
+        let options = create_start_options();
+        let mut packet_handler_builder = PacketHandlerBuilder::new();
         
+        let rt = Handle::current();
+
+        let opcode = Pkt::RemoveObject;
+        let data = PKTRemoveObject {
+            unpublished_objects: vec![
+                PKTRemoveObjectInner {
+                    object_id: 1
+            }],
+        };
+        let data = data.encode().unwrap();
+        
+        let (mut state, mut packet_handler) = packet_handler_builder.build();
+        packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
     }
 }

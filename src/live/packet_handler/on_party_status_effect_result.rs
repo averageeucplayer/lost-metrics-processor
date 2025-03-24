@@ -23,7 +23,16 @@ where
     ES: EncounterService {
     pub fn on_party_status_effect_result(&self, data: &[u8], state: &mut EncounterState) -> anyhow::Result<()> {
 
-        
+        let packet = parse_pkt1(&data, PKTPartyStatusEffectResultNotify::new)?;
+
+          // info!("{:?}", pkt);
+        self.trackers.borrow().party_tracker.borrow_mut().add(
+            packet.raid_instance_id,
+            packet.party_instance_id,
+            packet.character_id,
+            0,
+            None,
+        );
 
         Ok(())
     }
@@ -37,7 +46,24 @@ mod tests {
     use crate::live::packet_handler::test_utils::PacketHandlerBuilder;
 
     #[tokio::test]
-    async fn test() {
+    async fn should_map_entity_to_party() {
+        let options = create_start_options();
+        let mut packet_handler_builder = PacketHandlerBuilder::new();
         
+        let rt = Handle::current();
+
+        let opcode = Pkt::PartyStatusEffectResultNotify;
+        let data = PKTPartyStatusEffectResultNotify {
+            character_id: 1,
+            party_instance_id: 1,
+            raid_instance_id: 1
+        };
+        let data = data.encode().unwrap();
+
+        let entity_name = "test".to_string();
+        packet_handler_builder.create_player_with_character_id(1, 1, entity_name.clone());
+        
+        let (mut state, mut packet_handler) = packet_handler_builder.build();
+        packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
     }
 }

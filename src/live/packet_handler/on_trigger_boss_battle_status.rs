@@ -23,7 +23,19 @@ where
     ES: EncounterService {
     pub fn on_trigger_boss_battle_status(&self, data: &[u8], state: &mut EncounterState) -> anyhow::Result<()> {
 
-        
+        let encounter = &state.encounter;
+        // need to hard code clown because it spawns before the trigger is sent???
+            if encounter.current_boss_name.is_empty()
+            || encounter.fight_start == 0
+            || encounter.current_boss_name == "Saydon"
+        {
+            state.on_phase_transition(
+                state.client_id, 3,
+                self.stats_api.clone(),
+                self.encounter_service.clone(),
+                self.event_emitter.clone());
+            info!("phase: 3 - resetting encounter - TriggerBossBattleStatus");
+        }
 
         Ok(())
     }

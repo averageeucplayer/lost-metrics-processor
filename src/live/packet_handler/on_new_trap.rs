@@ -23,7 +23,23 @@ where
     ES: EncounterService {
     pub fn on_new_trap(&self, data: &[u8], state: &mut EncounterState) -> anyhow::Result<()> {
 
-        
+        let packet = parse_pkt1(&data, PKTNewTrap::new)?;
+        let object_id = packet.trap_struct.object_id;
+        let owner_id = packet.trap_struct.owner_id;
+        let skill_id = packet.trap_struct.skill_id;
+
+        self.trackers.borrow_mut().entity_tracker.new_trap(&packet);
+        if self.trackers.borrow_mut().entity_tracker.id_is_player(owner_id)
+            && packet.trap_struct.skill_id > 0
+        {
+            let key = (owner_id, packet.trap_struct.skill_id);
+            if let Some(timestamp) = state.skill_tracker.skill_timestamp.get(&key) {
+                state
+                    .skill_tracker
+                    .projectile_id_to_timestamp
+                    .insert(object_id, timestamp);
+            }
+        }
 
         Ok(())
     }
@@ -37,7 +53,23 @@ mod tests {
     use crate::live::packet_handler::test_utils::PacketHandlerBuilder;
 
     #[tokio::test]
-    async fn test() {
+    async fn should_track_trap_entity() {
+        let options = create_start_options();
+        let mut packet_handler_builder = PacketHandlerBuilder::new();
+        let rt = Handle::current();
+
+        let opcode = Pkt::NewTrap;
+        let data = PKTNewTrap {
+            trap_struct: PKTNewTrapInner {
+                object_id: 1,
+                owner_id: 1,
+                skill_id: 1,
+                skill_effect: 0
+            }
+        };
+        let data = data.encode().unwrap();
         
+        let (mut state, mut packet_handler) = packet_handler_builder.build();
+        packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
     }
 }

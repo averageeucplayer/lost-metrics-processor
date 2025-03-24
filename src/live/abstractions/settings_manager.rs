@@ -14,12 +14,12 @@ pub trait SettingsManager {
     fn write(&mut self, settings: &Settings) -> Result<()>;
 }
 
-pub struct DefaultSettingsManager<FS: FileSystem> {
-    file_system: FS,
+pub struct DefaultSettingsManager<'a, FS: FileSystem> {
+    file_system: &'a mut FS,
     path: PathBuf
 }
 
-impl<FS: FileSystem> SettingsManager for DefaultSettingsManager<FS> {
+impl<'a, FS: FileSystem> SettingsManager for DefaultSettingsManager<'a, FS> {
     fn get_or_create(&mut self) -> Result<Settings> {
 
         if self.file_system.exists(&self.path) {
@@ -46,8 +46,8 @@ impl<FS: FileSystem> SettingsManager for DefaultSettingsManager<FS> {
     }
 }
 
-impl<FS: FileSystem> DefaultSettingsManager<FS> {
-    pub fn new(file_system: FS, path: PathBuf) -> Self {
+impl<'a, FS: FileSystem> DefaultSettingsManager<'a, FS> {
+    pub fn new(file_system: &'a mut FS, path: PathBuf) -> Self {
         Self { file_system, path }
     }
 }
@@ -77,8 +77,8 @@ mod tests {
     fn should_create_settings() {
         let path = get_semi_random_settings_path();
 
-        let file_system = MemoryFileSystem::new();
-        let mut settings_manager = DefaultSettingsManager::new(file_system, path.clone());
+        let mut file_system = MemoryFileSystem::new();
+        let mut settings_manager = DefaultSettingsManager::new(&mut file_system, path.clone());
         let settings = settings_manager.get_or_create().unwrap();
 
         assert_eq!(settings.general.boss_only_damage, false);
@@ -88,8 +88,8 @@ mod tests {
     fn should_save_settings() {
         let path = get_semi_random_settings_path();
 
-        let file_system = MemoryFileSystem::new();
-        let mut settings_manager = DefaultSettingsManager::new(file_system, path.clone());
+        let mut file_system = MemoryFileSystem::new();
+        let mut settings_manager = DefaultSettingsManager::new(&mut file_system, path.clone());
         let mut settings = Settings::default();
         settings.general.hide_names = true;
 

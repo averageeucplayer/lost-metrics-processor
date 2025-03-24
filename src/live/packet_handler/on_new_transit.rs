@@ -39,7 +39,8 @@ mod tests {
     #[tokio::test]
     async fn should_call_damage_handler() {
         let options = create_start_options();
-        let mut packet_handler_builder = PacketHandlerBuilder::new();
+        let mut packet_handler_builder = PacketHandlerBuilder::new()
+            .setup_damage_encryption_handler();
         let rt = Handle::current();
 
         let opcode = Pkt::NewTransit;
@@ -50,10 +51,6 @@ mod tests {
         
         let (mut state, mut packet_handler) = packet_handler_builder.build();
 
-        // let damage_handler = MockDamageEncryptionHandlerTrait::new();
-        // let damage_handler = Box::new(damage_handler);
-
-        // packet_handler.set_damage_handler(damage_handler);
         packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
     }
 }

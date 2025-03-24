@@ -53,7 +53,26 @@ mod tests {
     use crate::live::packet_handler::test_utils::PacketHandlerBuilder;
 
     #[tokio::test]
-    async fn test() {
+    async fn should_track_local_player_entity() {
+        let options = create_start_options();
+        let mut packet_handler_builder = PacketHandlerBuilder::new();
+        packet_handler_builder.ensure_local_store_write_called();
+        let rt = Handle::current();
+
+        let opcode = Pkt::InitPC;
+        let data = PKTInitPC {
+            player_id: 1,
+            name: "test".into(),
+            character_id: 1,
+            class_id: 1,
+            gear_level: 1700.0,
+            stat_pairs: vec![],
+            status_effect_datas: vec![],
+            
+        };
+        let data = data.encode().unwrap();
         
+        let (mut state, mut packet_handler) = packet_handler_builder.build();
+        packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
     }
 }

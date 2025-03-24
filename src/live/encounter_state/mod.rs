@@ -13,7 +13,9 @@ mod update_local_player;
 
 use chrono::Utc;
 use hashbrown::HashMap;
+use log::info;
 use lost_metrics_core::models::*;
+use lost_metrics_misc::boss_to_raid_map;
 use lost_metrics_sniffer_stub::packets::definitions::PKTIdentityGaugeChangeNotify;
 use lost_metrics_store::encounter_service::EncounterService;
 use rsntp::SntpClient;
@@ -28,7 +30,7 @@ use std::time::Instant;
 use crate::live::skill_tracker::SkillTracker;
 use crate::live::utils::*;
 use super::abstractions::EventEmitter;
-use super::stats_api::StatsApi;
+use super::stats_api::{is_valid_raid, SendRaidInfo, StatsApi};
 use super::trackers::Trackers;
 
 #[derive(Debug)]
@@ -173,12 +175,57 @@ impl EncounterState {
         self.trackers.borrow().get_party_from_tracker()
     }
 
+    pub fn send_raid_info<SA: StatsApi>(&self, stats_api: Arc<Mutex<SA>>) {
+
+        let encounter = &self.encounter;
+        let boss_name = encounter.current_boss_name.clone();
+        let raid_name = if let Some(boss) = encounter.entities.get(&boss_name) {
+            boss_to_raid_map(&boss_name, boss.max_hp)
+        } else {
+            return;
+        };
+
+        if !is_valid_raid(&raid_name) {
+            info!("not valid for raid info");
+            return
+        }
+
+        let players: Vec<String> = encounter
+            .entities
+            .iter()
+            .filter_map(|(_, e)| {
+                if e.entity_type == EntityType::Player {
+                    Some(e.name.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if players.len() > 16 {
+            return;
+        }
+
+        let difficulty = self.raid_difficulty.clone();
+        let is_cleared = self.raid_clear;
+
+        tokio::task::spawn(async move {
+            let payload = SendRaidInfo {
+                players,
+                raid_name: &raid_name,
+                difficulty: &difficulty,
+                is_cleared
+            };
+            stats_api.lock().await.send_raid_info(payload).await;
+        });
+    }
+
     pub fn on_phase_transition<EE : EventEmitter, ES: EncounterService, SA: StatsApi>(
         &mut self,
         client_id: Option<Uuid>,
         phase_code: i32,
         stats_api: Arc<Mutex<SA>>,
-        repository: Arc<ES>,
+        encounter_service: Arc<ES>,
         event_emitter: Arc<EE>
     ) {
         event_emitter
@@ -186,17 +233,14 @@ impl EncounterState {
             .expect("failed to emit phase-transition");
 
         if matches!(phase_code, 0 | 2 | 3 | 4) && !self.encounter.current_boss_name.is_empty() {
-            let rt = Handle::current();
-
-            rt.block_on(async {
-                stats_api.lock().await.send_raid_info(self).await;
-            });
+           
+            self.send_raid_info(stats_api.clone());
             
             if phase_code == 0 {
                 self.is_valid_zone = false;
             }
 
-            self.save_to_db(client_id, stats_api, false, repository, event_emitter);
+            self.save_to_db(client_id, stats_api, false, encounter_service, event_emitter);
             self.saved = true;
         }
 

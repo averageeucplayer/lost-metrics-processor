@@ -14,6 +14,13 @@ use crate::constants::API_URL;
 #[cfg(test)]
 use mockall::automock;
 
+pub struct SendRaidInfo<'a> {
+    pub raid_name: &'a str,
+    pub difficulty: &'a str,
+    pub players: Vec<String>,
+    pub is_cleared: bool,
+}
+
 #[cfg_attr(test, automock)]
 pub trait StatsApi : Send + Sync + 'static  {
     fn get_character_info(&self,
@@ -22,7 +29,7 @@ pub trait StatsApi : Send + Sync + 'static  {
         players: Vec<String>,
         region: Option<String>,
     ) -> impl std::future::Future<Output = Option<HashMap<String, PlayerStats>>> + Send;
-    fn send_raid_info(&self, state: &EncounterState) -> Pin<Box<dyn Future<Output = ()> + Send>>;
+    fn send_raid_info<'a>(&self, payload: SendRaidInfo<'a>) -> Pin<Box<dyn Future<Output = ()> + Send>>;
     fn get_stats(&mut self, state: &EncounterState) -> Option<Cache<String, PlayerStats>>;
 }
 
@@ -85,50 +92,22 @@ impl StatsApi for DefaultStatsApi {
         }
     }
 
-    fn send_raid_info(&self, state: &EncounterState) -> Pin<Box<dyn Future<Output = ()> + Send>> {
-        let boss_name = state.encounter.current_boss_name.clone();
-        let raid_name = if let Some(boss) = state.encounter.entities.get(&boss_name) {
-            boss_to_raid_map(&boss_name, boss.max_hp)
-        } else {
-            return Box::pin(async {});
-        };
-
-        if !is_valid_raid(&raid_name) {
-            info!("not valid for raid info");
-            return Box::pin(async {});
-        }
-
-        let players: Vec<String> = state
-            .encounter
-            .entities
-            .iter()
-            .filter_map(|(_, e)| {
-                if e.entity_type == EntityType::Player {
-                    Some(e.name.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        if players.len() > 16 {
-            return Box::pin(async {});
-        }
-
+    fn send_raid_info(&self, payload: SendRaidInfo) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    
         let client = self.client.clone();
-        let difficulty = state.raid_difficulty.clone();
-        let cleared = state.raid_clear;
+        let url = format!("{API_URL}/stats/raid");
+
 
         let request_body = json!({
-            "raidName": raid_name,
-            "difficulty": difficulty,
-            "players": players,
-            "cleared": cleared,
+            "raidName": payload.raid_name,
+            "difficulty": payload.difficulty,
+            "players": payload.players,
+            "cleared": payload.is_cleared,
         });
 
         Box::pin(async move {
             match client
-                .post(format!("{API_URL}/stats/raid"))
+                .post(url)
                 .json(&request_body)
                 .send()
                 .await
@@ -161,7 +140,7 @@ impl DefaultStatsApi {
     }
 }
 
-fn is_valid_raid(raid_name: &str) -> bool {
+pub fn is_valid_raid(raid_name: &str) -> bool {
     matches!(
         raid_name,
         "Act 2: Brelshaza G1" | 

@@ -21,9 +21,16 @@ where
     LP: LocalPlayerStore,
     EE: EventEmitter,
     ES: EncounterService {
-    pub fn on_raid_boss_kill(&self, data: &[u8], state: &mut EncounterState) -> anyhow::Result<()> {
+    pub fn on_raid_boss_kill(&self, state: &mut EncounterState) -> anyhow::Result<()> {
 
-        
+        state.on_phase_transition(
+            state.client_id,
+            1,
+            self.stats_api.clone(),
+            self.encounter_service.clone(),
+            self.event_emitter.clone());
+        state.raid_clear = true;
+        info!("phase: 1 - RaidBossKillNotify");
 
         Ok(())
     }
@@ -37,7 +44,30 @@ mod tests {
     use crate::live::packet_handler::test_utils::PacketHandlerBuilder;
 
     #[tokio::test]
-    async fn test() {
+    async fn should_emit_event_and_save_to_db() {
+        let options = create_start_options();
+        let mut packet_handler_builder = PacketHandlerBuilder::new();
+        packet_handler_builder.ensure_event_called::<i32>("phase-transition".into());
+        let rt = Handle::current();
+
+        let opcode = Pkt::RaidBossKillNotify;
+        let data = vec![];
+
+        let entity_name = "test".to_string();
+        let boss_name = "Thaemine the Lightqueller";
+        packet_handler_builder.create_player(1, entity_name.clone());
+        packet_handler_builder.create_npc(2, boss_name);
         
+        let (mut state, mut packet_handler) = packet_handler_builder.build();
+
+        let boss_entity_stats = state.encounter.entities.get_mut(boss_name).unwrap();
+        boss_entity_stats.current_hp = 0;
+        let player_entity_stats = state.encounter.entities.get_mut(&entity_name).unwrap();
+        player_entity_stats.damage_stats.damage_dealt = 1000;
+        state.encounter.current_boss_name = boss_name.into();
+        state.encounter.fight_start = Utc::now().timestamp_millis();
+
+        packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
+
     }
 }

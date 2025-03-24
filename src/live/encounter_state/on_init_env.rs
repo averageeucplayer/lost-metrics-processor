@@ -17,11 +17,16 @@ impl EncounterState {
         client_id: Option<Uuid>,
         entity: Entity,
         stats_api: Arc<Mutex<SA>>,
-        repository: Arc<ES>,
+        encounter_service: Arc<ES>,
         event_emitter: Arc<EE>) {
         // if not already saved to db, we save again
         if !self.saved && !self.encounter.current_boss_name.is_empty() {
-            self.save_to_db(client_id, stats_api, false, repository, event_emitter.clone());
+            self.save_to_db(
+                client_id,
+                stats_api,
+                false,
+                encounter_service,
+                event_emitter.clone());
         }
 
         // replace or insert local player

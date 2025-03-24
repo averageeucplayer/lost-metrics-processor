@@ -1,13 +1,21 @@
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::RwLock;
 use std::time::Duration;
 use std::sync::Arc;
 use chrono::Utc;
 use lost_metrics_core::models::DamageStats;
+use lost_metrics_core::models::Encounter;
 use lost_metrics_core::models::EncounterEntity;
 use lost_metrics_core::models::EntityType;
 use lost_metrics_core::models::LocalInfo;
+use mockall::predicate::always;
+use tokio::sync::Mutex;
 use super::encounter_state::EncounterState;
 use super::flags::MockFlags;
+use super::heartbeat_api::MockHeartbeatApi;
+use super::stats_api::MockStatsApi;
+use super::trackers::Trackers;
 use super::StartOptions;
 use super::abstractions::*;
 use super::packet_handler::MockPacketHandler;
@@ -40,86 +48,6 @@ mock! {
     }
 }
 
-pub fn create_and_setup_flags() -> Arc<MockFlags> {
-    let mut flags = MockFlags::new();
-
-    flags
-        .expect_triggered_stop()
-        .returning(|| false);
-
-    flags
-        .expect_triggered_reset()
-        .returning(|| false);
-
-    flags
-        .expect_triggered_pause()
-        .returning(|| false);
-
-    flags
-        .expect_triggered_save()
-        .returning(|| false);
-
-    flags
-        .expect_triggered_boss_only_damage()
-        .returning(|| false);
-
-    let flags = Arc::new(flags);
-
-    flags
-}
-
-pub fn create_and_setup_event_listener() -> Arc<MockEventListener> {
-    let mut event_listener = MockEventListener::new();
-
-    event_listener
-        .expect_listen_global()
-        .times(5)
-        .returning(|_, _| {});
-
-    let event_listener = Arc::new(event_listener);
-
-    event_listener
-}
-
-pub fn create_and_setup_packet_handler() -> MockPacketHandler {
-    let mut packet_handler = MockPacketHandler::new();
-
-    packet_handler
-        .expect_handle()
-        .returning(|_, _, _, _, _| Ok(()));
-
-    packet_handler
-}
-
-pub fn create_and_setup_packet_sniffer() -> MockPacketSniffer {
-    use lost_metrics_sniffer_stub::packets::opcodes::Pkt;
-
-    let mut packet_sniffer = MockPacketSniffer::new();
-
-    packet_sniffer
-        .expect_start_capture()
-        .returning(move |_, _| {
-            let mut receiver = MockReceiverWrapper::new();
-
-            receiver
-                .expect_recv()
-                .times(1)
-                .returning(|| {
-                    let data = vec![];
-                    Ok((Pkt::NewPC, data))
-                });
-
-            receiver
-                .expect_recv()
-                .times(1)
-                .returning(|| Err(anyhow::anyhow!("End")));
-
-            Ok(Box::new(receiver))
-        });
-
-    packet_sniffer
-}
-
 pub fn create_start_options() -> StartOptions {
     StartOptions {
         version: "0.0.1".into(),
@@ -131,40 +59,6 @@ pub fn create_start_options() -> StartOptions {
         duration: Duration::from_millis(500),
         party_duration: Duration::from_millis(200),
     }
-}
-
-pub fn create_and_setup_region_store() -> Arc<MockRegionStore> {
-    let mut region_store = MockRegionStore::new();
-
-    region_store
-        .expect_get_path()
-        .returning(|| "path".into());
-
-    region_store
-        .expect_get()
-        .returning(|| None);
-
-    let region_store  = Arc::new(region_store);
-
-    region_store
-}
-
-pub fn create_and_setup_local_player_store() -> Arc<RwLock<MockLocalPlayerStore>> {
-    let mut local_player_store = MockLocalPlayerStore::new();
-
-    local_player_store
-        .expect_load()
-        .returning(|| Ok(false));
-
-    let local_info = LocalInfo::default();
-
-    local_player_store
-        .expect_get()
-        .return_const(local_info);
-    
-    let local_player_store = Arc::new(RwLock::new(local_player_store));
-
-    local_player_store
 }
 
 pub fn create_player_stats() -> EncounterEntity {
@@ -212,4 +106,224 @@ pub fn update_state_with_player_and_boss(state: &mut EncounterState) {
     };
     state.encounter.current_boss_name = "test_boss".into();
     state.encounter.entities.insert(boss.name.clone(), boss);
+}
+
+pub struct PacketCapturerBuilder {
+    options: StartOptions,
+    flags: MockFlags,
+    packet_sniffer: MockPacketSniffer,
+    packet_handler: MockPacketHandler,
+    trackers: Rc<RefCell<Trackers>>,
+    event_emitter: MockEventEmitter,
+    event_listener: MockEventListener,
+    region_store: MockRegionStore,
+    local_player_store: MockLocalPlayerStore,
+    encounter_service: MockEncounterService,
+    heartbeat_api: MockHeartbeatApi,
+    stats_api: MockStatsApi,
+    damage_encryption_handler: MockDamageEncryptionHandlerTrait
+}
+
+impl PacketCapturerBuilder {
+    pub fn new() -> Self {
+
+        let options = create_start_options();
+        let flags = MockFlags::new();
+        let packet_sniffer  = MockPacketSniffer::new();
+        let mut packet_handler  = MockPacketHandler::new();
+        let trackers = Rc::new(RefCell::new(Trackers::new()));
+        let mut state = EncounterState::new(trackers.clone(), options.version.clone());
+        let event_emitter = MockEventEmitter::new();
+        let event_listener = MockEventListener::new();
+        let region_store = MockRegionStore::new();
+        let local_player_store = MockLocalPlayerStore::new();
+        let encounter_service = MockEncounterService::new();
+        let heartbeat_api = MockHeartbeatApi::new();        
+        let stats_api = MockStatsApi::new();
+        let damage_encryption_handler = MockDamageEncryptionHandlerTrait::new();
+
+        Self {
+            options,
+            flags,
+            packet_handler,
+            packet_sniffer,
+            stats_api,
+            heartbeat_api,
+            encounter_service,
+            event_emitter,
+            event_listener,
+            damage_encryption_handler,
+            local_player_store,
+            region_store,
+            trackers,
+        }
+    }
+
+    pub fn setup_flags(mut self, stop: bool, reset: bool, pause: bool, save: bool, boss_only_damage: bool) -> Self {
+        self.flags
+            .expect_triggered_stop()
+            .returning(move || stop);
+
+        self.flags
+            .expect_triggered_reset()
+            .returning(move || reset);
+
+        self.flags
+            .expect_clear_reset()
+            .returning(|| {});
+
+        self.flags
+            .expect_triggered_pause()
+            .returning(move || pause);
+
+        self.flags
+            .expect_triggered_save()
+            .returning(move || save);
+
+        self.flags
+            .expect_reset_save()
+            .return_once(|| {});
+
+        self.flags
+            .expect_triggered_boss_only_damage()
+            .returning(move || boss_only_damage);
+
+        self
+    }
+
+    pub fn setup_default_flags(mut self) -> Self {
+        self.setup_flags(false, false, false, false, false)
+    }
+
+    pub fn setup_event_emitter(mut self) -> Self {
+        
+        self.event_emitter
+            .expect_emit()
+            .with(always(), always())
+            .returning(|_, _: Option<Encounter>| anyhow::Ok(()));
+
+        self
+    }
+
+    pub fn setup_event_listener(mut self) -> Self {
+    
+        self.event_listener
+            .expect_listen_global()
+            .times(5)
+            .returning(|_, _| {});
+    
+        self
+    }
+    
+    pub fn setup_packet_handler(mut self) -> Self {
+
+        self.packet_handler
+            .expect_handle()
+            .returning(|_, _, _, _, _| Ok(()));
+
+        self
+    }
+    
+    pub fn setup_packet_sniffer(mut self) -> Self {
+        use lost_metrics_sniffer_stub::packets::opcodes::Pkt;
+    
+        self.packet_sniffer
+            .expect_start_capture()
+            .returning(Self::setup_receiver);
+
+        self
+    }
+
+    fn setup_receiver(_port: u16, _str: String) -> anyhow::Result<Box<dyn ReceiverWrapper>> {
+        use lost_metrics_sniffer_stub::packets::opcodes::Pkt;
+
+        let mut receiver = MockReceiverWrapper::new();
+    
+        receiver
+            .expect_recv()
+            .times(1)
+            .returning(|| {
+                let data = vec![];
+                Ok((Pkt::NewPC, data))
+            });
+
+        receiver
+            .expect_recv()
+            .times(1)
+            .returning(|| Err(anyhow::anyhow!("End")));
+
+        Ok(Box::new(receiver))
+    }
+
+    pub fn setup_region_store(mut self) -> Self {
+    
+        self.region_store
+            .expect_get_path()
+            .returning(|| "path".into());
+    
+        self.region_store
+            .expect_get()
+            .returning(|| None);
+
+        self
+    }
+    
+    pub fn setup_local_player_store(mut self) -> Self {
+        self.local_player_store
+            .expect_load()
+            .returning(|| Ok(false));
+    
+        let local_info = LocalInfo::default();
+    
+        self.local_player_store
+            .expect_get()
+            .return_const(local_info);
+        
+        self
+    }
+
+    pub fn setup_damage_encryption_handler(mut self) -> Self {
+        self.damage_encryption_handler
+            .expect_start()
+            .returning(|| Ok(()));
+    
+        self
+    }
+
+    pub fn get_options(&mut self) -> &mut StartOptions {
+        &mut self.options
+    }
+
+    pub fn get_state(&mut self) -> EncounterState {
+        let state = EncounterState::new(self.trackers.clone(), self.options.version.clone());
+        state
+    }
+
+    pub fn start(mut self, state: &mut EncounterState)  {
+        let flags = Arc::new(self.flags);
+        let local_player_store = Arc::new(RwLock::new(self.local_player_store));
+        let event_emitter = Arc::new(self.event_emitter);
+        let encounter_service = Arc::new(self.encounter_service);
+        let event_listener = Arc::new(self.event_listener);
+        let region_store  = Arc::new(self.region_store);
+        let damage_encryption_handler = Arc::new(self.damage_encryption_handler);
+        let heartbeat_api = Arc::new(Mutex::new(self.heartbeat_api));
+        let stats_api = Arc::new(Mutex::new(self.stats_api));
+
+        super::start(
+            flags,
+            self.packet_sniffer,
+            &mut self.packet_handler,
+            damage_encryption_handler,
+            state,
+            self.options,
+            event_emitter,
+            event_listener, 
+            region_store, 
+            local_player_store,
+            encounter_service,
+            heartbeat_api,
+            stats_api
+        ).unwrap();
+    }
 }

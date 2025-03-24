@@ -60,7 +60,6 @@ pub fn start<FL, PS, PH, DH, EE, EL, RS, LP, ES, HB, SA>(
     let version = options.version.clone();
     let port = options.port;
     
-    //warn!("Error starting capture: {}", e);
     let rx = packet_sniffer.start_capture(port, region_store.get_path())?;
 
     damage_encryption_handler.start()?;
@@ -121,7 +120,9 @@ pub fn start<FL, PS, PH, DH, EE, EL, RS, LP, ES, HB, SA>(
             _ => {}
         }
 
-        if state.last_update.elapsed() >= options.duration || state.resetting || state.boss_dead_update {
+        let can_send_to_ui = state.last_update.elapsed() >= options.duration || state.resetting || state.boss_dead_update;
+
+        if can_send_to_ui {
             state.last_update = send_to_ui(state, event_emitter.clone(), &options);
         }
 
@@ -163,356 +164,146 @@ mod tests {
     use lost_metrics_core::models::Encounter;
     use mockall::predicate::always;
     use mockall::mock;
+    use tokio::time::sleep;
     use crate::live::{flags::MockFlags, heartbeat_api::MockHeartbeatApi, stats_api::MockStatsApi, test_utils::*, trackers::Trackers};
     use crate::live::test_utils::MockEncounterService;
     use super::*;
 
-    // #[tokio::test]
-    // async fn should_handle_packet() {
-
-    //     let options = create_start_options();
-    //     let flags = create_and_setup_flags();
-    //     let packet_sniffer = create_and_setup_packet_sniffer();
-    //     let mut packet_handler = create_and_setup_packet_handler();
-
-    //     let trackers = Rc::new(RefCell::new(Trackers::new()));
-    //     let mut state = EncounterState::new(trackers, options.version.clone());
-
-    //     let event_emitter = MockEventEmitter::new();
-    //     let event_emitter = Arc::new(event_emitter);
-
-    //     let event_listener = create_and_setup_event_listener();
-    //     let region_store = create_and_setup_region_store();
-    //     let local_player_store = create_and_setup_local_player_store();
-
-    //     let repository = MockEncounterService::new();
-    //     let repository = Arc::new(repository);
-        
-    //     let heartbeat_api = MockHeartbeatApi::new();
-    //     let heartbeat_api = Arc::new(Mutex::new(heartbeat_api));
-        
-    //     let stats_api = MockStatsApi::new();
-    //     let stats_api = Arc::new(Mutex::new(stats_api));
-
-    //     let damage_encryption_handler = MockDamageEncryptionHandlerTrait::new();
-
-    //     start(
-    //         flags,
-    //         packet_sniffer,
-    //         &mut packet_handler,
-    //         damage_encryption_handler,
-    //         &mut state,
-    //         options,
-    //         event_emitter,
-    //         event_listener, 
-    //         region_store, 
-    //         local_player_store,
-    //         repository,
-    //         heartbeat_api,
-    //         stats_api
-    //     ).unwrap();
-    // }
-
-    // #[tokio::test]
-    // async fn should_reset_requested_from_ui() {
-    //     let options = create_start_options();
-    //     let mut flags = MockFlags::new();
-
-    //     flags
-    //         .expect_triggered_stop()
-    //         .returning(|| false);
-
-    //     flags
-    //         .expect_triggered_reset()
-    //         .returning(|| true);
-
-    //     flags
-    //         .expect_clear_reset()
-    //         .return_once(|| {});
-
-    //     flags
-    //         .expect_triggered_pause()
-    //         .returning(|| false);
-
-    //     flags
-    //         .expect_triggered_save()
-    //         .returning(|| false);
-
-    //     flags
-    //         .expect_triggered_boss_only_damage()
-    //         .returning(|| false);
-
-    //     let flags = Arc::new(flags);
-
-    //     let packet_sniffer = create_and_setup_packet_sniffer();
-    //     let mut packet_handler = create_and_setup_packet_handler();
-
-    //     let trackers = Rc::new(RefCell::new(Trackers::new()));
-    //     let mut state = EncounterState::new(trackers, options.version.clone());
-
-    //     let event_emitter = MockEventEmitter::new();
-    //     let event_emitter = Arc::new(event_emitter);
-
-    //     let event_listener = create_and_setup_event_listener();
-    //     let region_store = create_and_setup_region_store();
-    //     let local_player_store = create_and_setup_local_player_store();
-
-    //     let repository = MockEncounterService::new();
-    //     let repository = Arc::new(repository);
-        
-    //     let heartbeat_api = MockHeartbeatApi::new();
-    //     let heartbeat_api = Arc::new(Mutex::new(heartbeat_api));
-        
-    //     let stats_api = MockStatsApi::new();
-    //     let stats_api = Arc::new(Mutex::new(stats_api));
-
-    //     start(
-    //         flags,
-    //         packet_sniffer,
-    //         &mut packet_handler,
-    //         &mut state,
-    //         options,
-    //         event_emitter,
-    //         event_listener, 
-    //         region_store, 
-    //         local_player_store,
-    //         repository,
-    //         heartbeat_api,
-    //         stats_api
-    //     ).unwrap();
-    // }
-
-    // #[tokio::test]
-    // async fn should_reset_on_flag() {
-    //     let options = create_start_options();
-    //     let flags = create_and_setup_flags();
-    //     let packet_sniffer = create_and_setup_packet_sniffer();
-    //     let mut packet_handler = create_and_setup_packet_handler();
-
-    //     let trackers = Rc::new(RefCell::new(Trackers::new()));
-    //     let mut state = EncounterState::new(trackers, options.version.clone());
-    //     state.resetting = true;
-    //     state.saved = true;
-    //     state.party_freeze = true;
-    //     state.party_cache = Some(vec![]);
-
-    //     let event_emitter = MockEventEmitter::new();
-    //     let event_emitter = Arc::new(event_emitter);
-
-    //     let event_listener = create_and_setup_event_listener();
-    //     let region_store = create_and_setup_region_store();
-    //     let local_player_store = create_and_setup_local_player_store();
-
-    //     let repository = MockEncounterService::new();
-    //     let repository = Arc::new(repository);
-        
-    //     let heartbeat_api = MockHeartbeatApi::new();
-    //     let heartbeat_api = Arc::new(Mutex::new(heartbeat_api));
-        
-    //     let stats_api = MockStatsApi::new();
-    //     let stats_api = Arc::new(Mutex::new(stats_api));
-
-    //     start(
-    //         flags,
-    //         packet_sniffer,
-    //         &mut packet_handler,
-    //         &mut state,
-    //         options,
-    //         event_emitter,
-    //         event_listener, 
-    //         region_store, 
-    //         local_player_store,
-    //         repository,
-    //         heartbeat_api,
-    //         stats_api
-    //     ).unwrap();
-
-    //     assert_eq!(state.resetting, false);
-    //     assert_eq!(state.saved, false);
-    //     assert_eq!(state.party_freeze, false);
-    //     assert_eq!(state.party_cache, None);
-    //     assert!(state.party_map_cache.is_empty());
-    // }
-
-    // #[tokio::test]
-    // async fn should_save_to_db() {
-    //     let options = create_start_options();
-    //     let mut flags = MockFlags::new();
-
-    //     flags
-    //         .expect_triggered_stop()
-    //         .returning(|| false);
-
-    //     flags
-    //         .expect_triggered_reset()
-    //         .returning(|| false);
-
-    //     flags
-    //         .expect_clear_reset()
-    //         .return_once(|| {});
-
-    //     flags
-    //         .expect_triggered_pause()
-    //         .returning(|| false);
-
-    //     flags
-    //         .expect_triggered_save()
-    //         .returning(|| true);
-
-    //     flags
-    //         .expect_reset_save()
-    //         .returning(|| {});
-
-    //     flags
-    //         .expect_triggered_boss_only_damage()
-    //         .returning(|| false);
-
-    //     let flags = Arc::new(flags);
-
-    //     let packet_sniffer = create_and_setup_packet_sniffer();
-    //     let mut packet_handler = create_and_setup_packet_handler();
-
-    //     let trackers = Rc::new(RefCell::new(Trackers::new()));
-    //     let mut state = EncounterState::new(trackers, options.version.clone());
-
-    //     update_state_with_player_and_boss(&mut state);
-
-    //     let event_emitter = MockEventEmitter::new();
-    //     let event_emitter = Arc::new(event_emitter);
-
-    //     let event_listener = create_and_setup_event_listener();
-    //     let region_store = create_and_setup_region_store();
-    //     let local_player_store = create_and_setup_local_player_store();
-
-    //     let repository = MockEncounterService::new();
-    //     let repository = Arc::new(repository);
-        
-    //     let heartbeat_api = MockHeartbeatApi::new();
-    //     let heartbeat_api = Arc::new(Mutex::new(heartbeat_api));
-        
-    //     let stats_api = MockStatsApi::new();
-    //     let stats_api = Arc::new(Mutex::new(stats_api));
-
-    //     start(
-    //         flags,
-    //         packet_sniffer,
-    //         &mut packet_handler,
-    //         &mut state,
-    //         options,
-    //         event_emitter,
-    //         event_listener, 
-    //         region_store, 
-    //         local_player_store,
-    //         repository,
-    //         heartbeat_api,
-    //         stats_api
-    //     ).unwrap();
-    // }
-
-    // #[tokio::test]
-    // async fn should_send_party_to_ui() {
-
-    //     let options = create_start_options();
-    //     let flags = create_and_setup_flags();
-    //     let packet_sniffer = create_and_setup_packet_sniffer();
-    //     let mut packet_handler = create_and_setup_packet_handler();
-
-    //     let trackers = Rc::new(RefCell::new(Trackers::new()));
-    //     let mut state = EncounterState::new(trackers, options.version.clone());
-
-    //     let entity = create_player_stats();
-    //     state.encounter.entities.insert(entity.name.clone(), entity);
-    //     state.last_update = Instant::now() + options.duration;
-    //     state.last_party_update = Instant::now() + options.party_duration;
-
-    //     let mut event_emitter = MockEventEmitter::new();
-
-    //     event_emitter
-    //         .expect_emit()
-    //         .with(always(), always())
-    //         .returning(|_, _: Option<Encounter>| anyhow::Ok(()));
-
-    //     let event_emitter = Arc::new(event_emitter);
-
-    //     let event_listener = create_and_setup_event_listener();
-    //     let region_store = create_and_setup_region_store();
-    //     let local_player_store = create_and_setup_local_player_store();
-
-    //     let repository = MockEncounterService::new();
-    //     let repository = Arc::new(repository);
-        
-    //     let heartbeat_api = MockHeartbeatApi::new();
-    //     let heartbeat_api = Arc::new(Mutex::new(heartbeat_api));
-        
-    //     let stats_api = MockStatsApi::new();
-    //     let stats_api = Arc::new(Mutex::new(stats_api));
-
-    //     start(
-    //         flags,
-    //         packet_sniffer,
-    //         &mut packet_handler,
-    //         &mut state,
-    //         options,
-    //         event_emitter,
-    //         event_listener, 
-    //         region_store, 
-    //         local_player_store,
-    //         repository,
-    //         heartbeat_api,
-    //         stats_api
-    //     ).unwrap();
-    // }
-
-    // #[tokio::test]
-    // async fn should_send_encounter_to_ui() {
-
-    //     let options = create_start_options();
-    //     let flags = create_and_setup_flags();
-    //     let packet_sniffer = create_and_setup_packet_sniffer();
-    //     let mut packet_handler = create_and_setup_packet_handler();
-
-    //     let trackers = Rc::new(RefCell::new(Trackers::new()));
-    //     let mut state = EncounterState::new(trackers, options.version.clone());
-
-    //     let entity = create_player_stats();
-    //     state.encounter.entities.insert(entity.name.clone(), entity);
-    //     state.last_update = Instant::now() + options.duration;
-
-    //     let mut event_emitter = MockEventEmitter::new();
-
-    //     event_emitter
-    //         .expect_emit()
-    //         .with(always(), always())
-    //         .returning(|_, _: Option<Encounter>| anyhow::Ok(()));
-
-    //     let event_emitter = Arc::new(event_emitter);
-
-    //     let event_listener = create_and_setup_event_listener();
-    //     let region_store = create_and_setup_region_store();
-    //     let local_player_store = create_and_setup_local_player_store();
-
-    //     let repository = MockEncounterService::new();
-    //     let repository = Arc::new(repository);
-        
-    //     let heartbeat_api = MockHeartbeatApi::new();
-    //     let heartbeat_api = Arc::new(Mutex::new(heartbeat_api));
-        
-    //     let stats_api = MockStatsApi::new();
-    //     let stats_api = Arc::new(Mutex::new(stats_api));
-
-    //     start(
-    //         flags,
-    //         packet_sniffer,
-    //         &mut packet_handler,
-    //         &mut state,
-    //         options,
-    //         event_emitter,
-    //         event_listener, 
-    //         region_store, 
-    //         local_player_store,
-    //         repository,
-    //         heartbeat_api,
-    //         stats_api
-    //     ).unwrap();
-    // }
+    #[tokio::test]
+    async fn should_handle_packet() {
+
+        let mut packet_capturer_builder = PacketCapturerBuilder::new();
+
+        let mut packet_capturer_builder = packet_capturer_builder
+            .setup_default_flags()
+            .setup_event_listener()
+            .setup_local_player_store()
+            .setup_region_store()
+            .setup_packet_sniffer()
+            .setup_packet_handler()
+            .setup_damage_encryption_handler();
+
+        let mut state = packet_capturer_builder.get_state();
+
+        packet_capturer_builder.start(&mut state);
+       
+    }
+
+    #[tokio::test]
+    async fn should_reset_requested_from_ui() {
+
+        let mut packet_capturer_builder = PacketCapturerBuilder::new();
+
+        let mut packet_capturer_builder = packet_capturer_builder
+            .setup_flags(false, true, false, false, false)
+            .setup_event_listener()
+            .setup_local_player_store()
+            .setup_region_store()
+            .setup_packet_sniffer()
+            .setup_packet_handler()
+            .setup_damage_encryption_handler();
+
+        let mut state = packet_capturer_builder.get_state();
+
+        packet_capturer_builder.start(&mut state);
+    }
+
+    #[tokio::test]
+    async fn should_reset_on_flag() {
+        let mut packet_capturer_builder = PacketCapturerBuilder::new();
+
+        let mut packet_capturer_builder = packet_capturer_builder
+            .setup_default_flags()
+            .setup_event_listener()
+            .setup_local_player_store()
+            .setup_region_store()
+            .setup_packet_sniffer()
+            .setup_packet_handler()
+            .setup_damage_encryption_handler();
+
+        let mut state = packet_capturer_builder.get_state();
+        state.resetting = true;
+        state.saved = true;
+        state.party_freeze = true;
+        state.party_cache = Some(vec![]);
+
+        packet_capturer_builder.start(&mut state);
+
+        assert_eq!(state.resetting, false);
+        assert_eq!(state.saved, false);
+        assert_eq!(state.party_freeze, false);
+        assert_eq!(state.party_cache, None);
+        assert!(state.party_map_cache.is_empty());
+    }
+
+    #[tokio::test]
+    async fn should_save_to_db() {
+
+        let mut packet_capturer_builder = PacketCapturerBuilder::new();
+
+        let mut packet_capturer_builder = packet_capturer_builder
+            .setup_flags(false, false, false, true, false)
+            .setup_event_listener()
+            .setup_local_player_store()
+            .setup_region_store()
+            .setup_packet_sniffer()
+            .setup_packet_handler()
+            .setup_damage_encryption_handler();
+
+        let mut state = packet_capturer_builder.get_state();
+        update_state_with_player_and_boss(&mut state);
+
+        packet_capturer_builder.start(&mut state);
+    }
+
+    #[tokio::test]
+    async fn should_send_party_info_to_ui() {
+
+        let mut packet_capturer_builder = PacketCapturerBuilder::new();
+
+        let mut packet_capturer_builder = packet_capturer_builder
+            .setup_default_flags()
+            .setup_event_listener()
+            .setup_event_emitter()
+            .setup_local_player_store()
+            .setup_region_store()
+            .setup_packet_sniffer()
+            .setup_packet_handler()
+            .setup_damage_encryption_handler();
+
+        let mut state = packet_capturer_builder.get_state();
+        let options = packet_capturer_builder.get_options();
+        let entity = create_player_stats();
+        state.encounter.entities.insert(entity.name.clone(), entity);
+        state.last_update = Instant::now() + options.duration;
+        state.last_party_update = Instant::now() + options.party_duration;
+
+        sleep(Duration::from_secs(1)).await;
+        packet_capturer_builder.start(&mut state);
+    }
+
+    #[tokio::test]
+    async fn should_send_encounter_to_ui() {
+
+        let mut packet_capturer_builder = PacketCapturerBuilder::new();
+
+        let mut packet_capturer_builder = packet_capturer_builder
+            .setup_default_flags()
+            .setup_event_listener()
+            .setup_event_emitter()
+            .setup_local_player_store()
+            .setup_region_store()
+            .setup_packet_sniffer()
+            .setup_packet_handler()
+            .setup_damage_encryption_handler();
+
+        let mut state = packet_capturer_builder.get_state();
+        let options = packet_capturer_builder.get_options();
+        let entity = create_player_stats();
+        let entity = create_player_stats();
+        state.encounter.entities.insert(entity.name.clone(), entity);
+        state.last_update = Instant::now() + options.duration;
+
+        packet_capturer_builder.start(&mut state);
+    }
 }

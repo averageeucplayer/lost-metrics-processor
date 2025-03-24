@@ -8,6 +8,7 @@ use log::warn;
 use lost_metrics_core::models::*;
 use lost_metrics_data::*;
 use lost_metrics_misc::*;
+use lost_metrics_sniffer_stub::packets::definitions::PKTPartyStatusEffectRemoveNotify;
 use lost_metrics_sniffer_stub::packets::structures::StatPair;
 use std::any::type_name;
 use std::cell::RefCell;
@@ -96,6 +97,10 @@ pub fn on_shield_change(
     state.on_shield_used(&source, &target, status_effect.status_effect_id, change);
 }
 
+
+#[deprecated(
+    note = "Use `parse_pkt1`"
+)]
 pub fn parse_pkt<T, F>(data: &[u8], new_fn: F) -> Option<T>
 where
     T: Debug,
