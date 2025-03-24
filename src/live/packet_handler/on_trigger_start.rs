@@ -78,7 +78,20 @@ mod tests {
     use crate::live::packet_handler::test_utils::PacketHandlerBuilder;
 
     #[tokio::test]
-    async fn test() {
+    async fn should_set_reset_flag() {
+        let options = create_start_options();
+        let mut packet_handler_builder = PacketHandlerBuilder::new();
+        packet_handler_builder.ensure_event_called::<i32>("phase-transition".into());
+        let rt = Handle::current();
+
+        let opcode = Pkt::TriggerStartNotify;
+        let data = PKTTriggerStartNotify {
+            signal: 57,
+        };
+        let data = data.encode().unwrap();
         
+        let (mut state, mut packet_handler) = packet_handler_builder.build();
+        packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
+        assert!(state.resetting);
     }
 }

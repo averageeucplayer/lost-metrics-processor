@@ -90,13 +90,59 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
+    use lost_metrics_sniffer_stub::packets::common::SkillMoveOptionData;
     use lost_metrics_sniffer_stub::packets::opcodes::Pkt;
+    use lost_metrics_sniffer_stub::packets::structures::SkillDamageEvent;
     use tokio::runtime::Handle;
     use crate::live::{packet_handler::*, test_utils::create_start_options};
-    use crate::live::packet_handler::test_utils::PacketHandlerBuilder;
+    use crate::live::packet_handler::test_utils::{to_modifier, PacketHandlerBuilder, SorceressSkills};
 
     #[tokio::test]
-    async fn should_update_state() {
+    async fn should_update_damage_stats() {
+        let options = create_start_options();
+        let mut packet_handler_builder = PacketHandlerBuilder::new();
+        packet_handler_builder.ensure_event_decrypted();
+        packet_handler_builder.ensure_event_called::<i64>("raid-start".into());
+        let rt = Handle::current();
+        let opcode = Pkt::SkillDamageAbnormalMoveNotify;
+        let data = PKTSkillDamageAbnormalMoveNotify {
+            source_id: 1,
+            skill_damage_abnormal_move_events: vec![
+                PKTSkillDamageAbnormalMoveNotifyInner {
+                    skill_damage_event: SkillDamageEvent { 
+                        target_id: 2,
+                        damage: 3e9 as i64,
+                        modifier: to_modifier(HitOption::FlankAttack, HitFlag::Critical),
+                        cur_hp: 0 as i64,
+                        max_hp: 3e9 as i64,
+                        damage_attr: None,
+                        damage_type: 0
+                    },
+                    skill_move_option_data: SkillMoveOptionData {
+                        down_time: None,
+                        stand_up_time: None,
+                        move_time: None
+                    }
+                }
+            ],
+            skill_id: SorceressSkills::Doomsday as u32,
+            skill_effect_id: 0
+        };
+        let data = data.encode().unwrap();
+
+        let entity_name = "Assun".to_string();
+        let boss_name = "Thaemine the Lightqueller";
+        packet_handler_builder.create_player(1, entity_name.clone());
+        packet_handler_builder.create_npc_with_hp(2, boss_name, 1e10 as i64);
         
+        let (mut state, mut packet_handler) = packet_handler_builder.build();
+
+        state.raid_end_cd = state.raid_end_cd - Duration::from_secs(11);
+
+        packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
+        assert_eq!(state.encounter.entities.get(&entity_name).unwrap().damage_stats.crit_damage, 3e9 as i64);
+        assert_eq!(state.encounter.entities.get(boss_name).unwrap().current_hp, 0);
     }
 }

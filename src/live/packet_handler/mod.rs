@@ -132,7 +132,7 @@ where
             Pkt::PartyStatusEffectResultNotify => self.on_party_status_effect_result(data, state)?,
             Pkt::StatusEffectAddNotify => self.on_status_effect_add(data, state)?,
             Pkt::StatusEffectRemoveNotify => self.on_status_effect_remove(data, state)?,
-            Pkt::TriggerBossBattleStatus => self.on_trigger_boss_battle_status(data, state)?,
+            Pkt::TriggerBossBattleStatus => self.on_trigger_boss_battle_status(state)?,
             Pkt::TriggerStartNotify => self.on_trigger_start(data, state)?,
             Pkt::ZoneMemberLoadStatusNotify => self.on_zone_member_load(data, state)?,
             Pkt::ZoneObjectUnpublishNotify => self.on_zone_object_unpublish(data, state)?,

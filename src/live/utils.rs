@@ -83,6 +83,7 @@ pub fn on_shield_change(
     if change == 0 {
         return;
     }
+
     let source = entity_tracker.get_source_entity(status_effect.source_id);
     let target_id = if status_effect.target_type == StatusEffectTargetType::Party {
         id_tracker
@@ -96,7 +97,6 @@ pub fn on_shield_change(
     state.on_boss_shield(&target, status_effect.value);
     state.on_shield_used(&source, &target, status_effect.status_effect_id, change);
 }
-
 
 #[deprecated(
     note = "Use `parse_pkt1`"

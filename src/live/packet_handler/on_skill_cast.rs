@@ -53,7 +53,7 @@ mod tests {
     use crate::live::packet_handler::test_utils::PacketHandlerBuilder;
 
     #[tokio::test]
-    async fn should_remove_entities_from_tracker() {
+    async fn should_update_entity() {
         let options = create_start_options();
         let mut packet_handler_builder = PacketHandlerBuilder::new();
         
@@ -65,8 +65,11 @@ mod tests {
             source_id: 1
         };
         let data = data.encode().unwrap();
+
+        packet_handler_builder.create_unknown(1);
         
         let (mut state, mut packet_handler) = packet_handler_builder.build();
+
         packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
     }
 }

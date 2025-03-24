@@ -68,12 +68,97 @@ where
 #[cfg(test)]
 mod tests {
     use lost_metrics_sniffer_stub::packets::opcodes::Pkt;
+    use lost_metrics_sniffer_stub::packets::structures::StatusEffectData;
     use tokio::runtime::Handle;
     use crate::live::{packet_handler::*, test_utils::create_start_options};
-    use crate::live::packet_handler::test_utils::PacketHandlerBuilder;
+    use crate::live::packet_handler::test_utils::*;
 
     #[tokio::test]
-    async fn should_update_status_effect_registry() {
+    async fn should_register_status_effect_case_crowd_control() {
+        let options = create_start_options();
+        let mut packet_handler_builder = PacketHandlerBuilder::new();
+        let rt = Handle::current();
+
+        let buff = get_skill_buff_by_type_and_lt_duration("freeze", 3600);
+        let opcode = Pkt::StatusEffectAddNotify;
+        let data = PKTStatusEffectAddNotify {
+            object_id: 2,
+            status_effect_data: StatusEffectData {
+                source_id: 1,
+                status_effect_id: buff.id as u32,
+                status_effect_instance_id: 1,
+                value: Some(vec![]),
+                total_time: buff.duration as f32,
+                stack_count: 0,
+                end_tick: 0
+            }
+        };
+        let data = data.encode().unwrap();
+        packet_handler_builder.create_player(1, "Losing".into());
+        packet_handler_builder.create_player(2, "Baker".into());
         
+        let (mut state, mut packet_handler) = packet_handler_builder.build();
+        packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
+        let incapacitation = state.encounter.entities.get("Baker").unwrap().damage_stats.incapacitations.first().unwrap();
+        assert_eq!(incapacitation.event_type, IncapacitationEventType::CrowdControl);
+        assert_eq!(incapacitation.duration, buff.duration as i64 * 1000);
+    }
+
+    #[tokio::test]
+    async fn should_register_status_effect_case_shield() {
+        let options = create_start_options();
+        let mut packet_handler_builder = PacketHandlerBuilder::new();
+        
+        let rt = Handle::current();
+
+        let opcode = Pkt::StatusEffectAddNotify;
+        let data = PKTStatusEffectAddNotify {
+            object_id: 2,
+            status_effect_data: StatusEffectData {
+                source_id: 1,
+                status_effect_id: 171805,
+                status_effect_instance_id: 1,
+                value: Some(vec![]),
+                total_time: 10.0,
+                stack_count: 0,
+                end_tick: 0
+            }
+        };
+        let data = data.encode().unwrap();
+
+        packet_handler_builder.create_player(1, "player_1".into());
+        packet_handler_builder.create_player(2, "player_1".into());
+        
+        let (mut state, mut packet_handler) = packet_handler_builder.build();
+        packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
+    }
+
+    #[tokio::test]
+    async fn should_register_status_effect() {
+        let options = create_start_options();
+        let mut packet_handler_builder = PacketHandlerBuilder::new();
+        
+        let rt = Handle::current();
+
+        let opcode = Pkt::StatusEffectAddNotify;
+        let data = PKTStatusEffectAddNotify {
+            object_id: 2,
+            status_effect_data: StatusEffectData {
+                source_id: 1,
+                status_effect_id: 920017,
+                status_effect_instance_id: 1,
+                value: Some(vec![]),
+                total_time: 10.0,
+                stack_count: 0,
+                end_tick: 0
+            }
+        };
+        let data = data.encode().unwrap();
+
+        packet_handler_builder.create_player(1, "player_1".into());
+        packet_handler_builder.create_player(2, "player_1".into());
+        
+        let (mut state, mut packet_handler) = packet_handler_builder.build();
+        packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
     }
 }

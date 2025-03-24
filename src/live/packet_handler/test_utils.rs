@@ -1,12 +1,32 @@
 use std::{cell::RefCell, rc::Rc, sync::{Arc, RwLock}};
 use crate::live::{abstractions::*, encounter_state::EncounterState, flags::MockFlags, packet_handler::*, stats_api::MockStatsApi, trackers::Trackers};
 use crate::live::test_utils::*;
-use lost_metrics_data::NPC_DATA;
+use lost_metrics_data::{NPC_DATA, SKILL_BUFF_DATA};
 use lost_metrics_sniffer_stub::packets::{definitions::{PKTNewPC, PKTNewPCInner}, structures::{NpcStruct, StatusEffectData}};
 use lost_metrics_store::encounter_service;
 use serde::Serialize;
 use std::fmt::Debug;
 use mockall::*;
+
+#[derive(Debug, PartialEq)]
+#[repr(u32)]
+pub enum SorceressSkills {
+    Doomsday = 37350
+}
+
+pub fn to_modifier(hit_option: HitOption, hit_flag: HitFlag) -> i32 {
+    (hit_flag as i32) | ((hit_option as i32) << 4)
+}
+
+pub fn get_skill_buff_by_type_and_lt_duration(kind: &str, duration: i32) -> &SkillBuffData {
+    SKILL_BUFF_DATA
+        .iter()
+        .filter(|(id, buff)| buff.buff_type == kind
+            && buff.duration < duration)
+        .map(|(id, buff)| buff)
+        .max_by_key(|buff| buff.duration)
+        .unwrap()
+}
 
 pub fn get_npc_by_name<'a>(npc_name: &str) -> Option<&'a Npc> {
     NPC_DATA
@@ -119,6 +139,13 @@ impl PacketHandlerBuilder {
             .return_const(local_info);
     }
 
+    
+    pub fn ensure_event_decrypted(&mut self) {
+        self.damage_encryption_handler
+            .expect_decrypt_damage_event()
+            .return_const(true);
+    }
+
     pub fn ensure_local_store_write_called(&mut self) {
         self.local_player_store
             .expect_write()
@@ -152,10 +179,26 @@ impl PacketHandlerBuilder {
         self.state.on_new_pc(entity, 100000, 100000);
     }
 
+    pub fn create_unknown(&mut self, object_id: u64) {
+        let entity = Entity {
+            id: object_id,
+            entity_type: EntityType::Unknown,
+            name: format!("{:x}", object_id),
+            ..Default::default()
+        };
+        self.trackers.borrow_mut().entity_tracker.entities.insert(entity.id, entity.clone());
+    }
+
     pub fn create_player(&mut self, player_id: u64, name: String) {
         let playable_character = create_pc(player_id, 101, 1, name);
         let entity = self.trackers.borrow_mut().entity_tracker.new_pc(playable_character);
         self.state.on_new_pc(entity, 100000, 100000);
+    }
+
+    pub fn create_npc_with_hp(&mut self, object_id: u64, name: &str, max_hp: i64) {
+        let npc = create_npc(object_id, name);
+        let entity = self.trackers.borrow_mut().entity_tracker.new_npc(npc, max_hp);
+        self.state.on_new_npc(entity, max_hp, max_hp);
     }
 
     pub fn create_npc(&mut self, object_id: u64, name: &str) {

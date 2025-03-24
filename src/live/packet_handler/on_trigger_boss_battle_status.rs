@@ -21,7 +21,7 @@ where
     LP: LocalPlayerStore,
     EE: EventEmitter,
     ES: EncounterService {
-    pub fn on_trigger_boss_battle_status(&self, data: &[u8], state: &mut EncounterState) -> anyhow::Result<()> {
+    pub fn on_trigger_boss_battle_status(&self, state: &mut EncounterState) -> anyhow::Result<()> {
 
         let encounter = &state.encounter;
         // need to hard code clown because it spawns before the trigger is sent???
@@ -43,13 +43,25 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::vec;
+
     use lost_metrics_sniffer_stub::packets::opcodes::Pkt;
     use tokio::runtime::Handle;
     use crate::live::{packet_handler::*, test_utils::create_start_options};
     use crate::live::packet_handler::test_utils::PacketHandlerBuilder;
 
     #[tokio::test]
-    async fn test() {
+    async fn should_set_reset_flag() {
+        let options = create_start_options();
+        let mut packet_handler_builder = PacketHandlerBuilder::new();
+        packet_handler_builder.ensure_event_called::<i32>("phase-transition".into());
+        let rt = Handle::current();
+
+        let opcode = Pkt::TriggerBossBattleStatus;
+        let data = vec![];
         
+        let (mut state, mut packet_handler) = packet_handler_builder.build();
+        packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
+        assert!(state.resetting);
     }
 }

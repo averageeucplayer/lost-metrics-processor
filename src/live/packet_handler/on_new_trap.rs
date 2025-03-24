@@ -28,9 +28,12 @@ where
         let owner_id = packet.trap_struct.owner_id;
         let skill_id = packet.trap_struct.skill_id;
 
-        self.trackers.borrow_mut().entity_tracker.new_trap(&packet);
-        if self.trackers.borrow_mut().entity_tracker.id_is_player(owner_id)
-            && packet.trap_struct.skill_id > 0
+        let entity_tracker = &mut self.trackers.borrow_mut().entity_tracker;
+        
+        entity_tracker.new_trap(&packet);
+        let is_player = entity_tracker.id_is_player(owner_id);
+
+        if is_player && skill_id > 0
         {
             let key = (owner_id, packet.trap_struct.skill_id);
             if let Some(timestamp) = state.skill_tracker.skill_timestamp.get(&key) {
@@ -61,14 +64,15 @@ mod tests {
         let opcode = Pkt::NewTrap;
         let data = PKTNewTrap {
             trap_struct: PKTNewTrapInner {
-                object_id: 1,
+                object_id: 2,
                 owner_id: 1,
-                skill_id: 1,
+                skill_id: 21090,
                 skill_effect: 0
             }
         };
         let data = data.encode().unwrap();
-        
+        packet_handler_builder.create_player(1, "Bard".into());
+
         let (mut state, mut packet_handler) = packet_handler_builder.build();
         packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
     }

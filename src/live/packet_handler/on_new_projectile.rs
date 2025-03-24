@@ -62,14 +62,15 @@ mod tests {
         let opcode = Pkt::NewProjectile;
         let data = PKTNewProjectile {
             projectile_info: PKTNewProjectileInner { 
-                projectile_id: 1,
+                projectile_id: 2,
                 owner_id: 1,
-                skill_id: 1,
+                skill_id: 21090,
                 skill_effect: 0
             }
         };
         let data = data.encode().unwrap();
-        
+        packet_handler_builder.create_player(1, "Bard".into());
+
         let (mut state, mut packet_handler) = packet_handler_builder.build();
         packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
     }

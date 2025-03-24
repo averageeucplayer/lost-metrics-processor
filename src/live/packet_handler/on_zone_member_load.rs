@@ -13,6 +13,15 @@ use lost_metrics_store::encounter_service::EncounterService;
 
 use super::DefaultPacketHandler;
 
+const RAID_DIFFICULTIES: &[(&str, u32)] = &[
+    ("Normal", 0),
+    ("Hard", 1),
+    ("Inferno", 2),
+    ("Challenge", 3),
+    ("Solo", 4),
+    ("The First", 5),
+];
+
 impl<FL, DH, SA, RS, LP, EE, ES> DefaultPacketHandler<FL, DH, SA, RS, LP, EE, ES>
 where
     FL: Flags,
@@ -28,41 +37,17 @@ where
 
         state.is_valid_zone = VALID_ZONES.contains(&packet.zone_id);
 
-            if state.raid_difficulty_id >= packet.zone_id && !state.raid_difficulty.is_empty()
-            {
-                return Ok(());
-            }
-            
-            info!("raid zone id: {}", &packet.zone_id);
-            info!("raid zone id: {}", &packet.zone_level);
+        if state.raid_difficulty_id >= packet.zone_id && !state.raid_difficulty.is_empty()
+        {
+            return Ok(());
+        }
+        
+        info!("raid zone id: {} level: {}", &packet.zone_id, packet.zone_level);
 
-            match packet.zone_level {
-                0 => {
-                    state.raid_difficulty = "Normal".to_string();
-                    state.raid_difficulty_id = 0;
-                }
-                1 => {
-                    state.raid_difficulty = "Hard".to_string();
-                    state.raid_difficulty_id = 1;
-                }
-                2 => {
-                    state.raid_difficulty = "Inferno".to_string();
-                    state.raid_difficulty_id = 2;
-                }
-                3 => {
-                    state.raid_difficulty = "Challenge".to_string();
-                    state.raid_difficulty_id = 3;
-                }
-                4 => {
-                    state.raid_difficulty = "Solo".to_string();
-                    state.raid_difficulty_id = 4;
-                }
-                5 => {
-                    state.raid_difficulty = "The First".to_string();
-                    state.raid_difficulty_id = 5;
-                }
-                _ => {}
-            }
+        if let Some(&(name, id)) = RAID_DIFFICULTIES.get(packet.zone_level as usize) {
+            state.raid_difficulty = name.to_string();
+            state.raid_difficulty_id = id;
+        }
 
         Ok(())
     }
@@ -76,7 +61,20 @@ mod tests {
     use crate::live::packet_handler::test_utils::PacketHandlerBuilder;
 
     #[tokio::test]
-    async fn test() {
+    async fn should_set_raid_difficulty() {
+        let options = create_start_options();
+        let mut packet_handler_builder = PacketHandlerBuilder::new();
         
+        let rt = Handle::current();
+
+        let opcode = Pkt::ZoneMemberLoadStatusNotify;
+        let data = PKTZoneMemberLoadStatusNotify {
+            zone_id: 1,
+            zone_level: 1
+        };
+        let data = data.encode().unwrap();
+        
+        let (mut state, mut packet_handler) = packet_handler_builder.build();
+        packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
     }
 }

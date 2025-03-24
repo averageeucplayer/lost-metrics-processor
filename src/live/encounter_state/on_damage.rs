@@ -97,9 +97,6 @@ impl EncounterState {
             event_emitter
                 .emit("raid-start", timestamp)
                 .expect("failed to emit raid-start");
-            // self.window
-            //     .emit("raid-start", timestamp)
-            //     .expect("failed to emit raid-start");
         }
 
         self.encounter.last_combat_packet = timestamp;
