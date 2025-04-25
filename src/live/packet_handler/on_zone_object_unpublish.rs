@@ -2,7 +2,7 @@ use crate::live::abstractions::{EventEmitter, LocalPlayerStore, RegionStore};
 use crate::live::encounter_state::EncounterState;
 use crate::live::flags::Flags;
 use crate::live::stats_api::StatsApi;
-use crate::live::utils::{get_current_and_max_hp, parse_pkt1};
+use crate::live::utils::{get_current_and_max_hp};
 use anyhow::Ok;
 use hashbrown::HashMap;
 use log::*;
@@ -24,10 +24,8 @@ where
     ES: EncounterService {
     pub fn on_zone_object_unpublish(&self, data: &[u8], state: &mut EncounterState) -> anyhow::Result<()> {
 
-        let packet = parse_pkt1(&data, PKTZoneObjectUnpublishNotify::new)?;
-        self.trackers.borrow().status_tracker
-            .borrow_mut()
-            .remove_local_object(packet.object_id);
+        let packet = PKTZoneObjectUnpublishNotify::new(&data)?;
+        state.local_status_effect_registry.remove(&packet.object_id);
 
         Ok(())
     }
@@ -38,22 +36,19 @@ mod tests {
     use lost_metrics_sniffer_stub::packets::opcodes::Pkt;
     use tokio::runtime::Handle;
     use crate::live::{packet_handler::*, test_utils::create_start_options};
-    use crate::live::packet_handler::test_utils::PacketHandlerBuilder;
+    use crate::live::packet_handler::test_utils::{PacketBuilder, PacketHandlerBuilder, StateBuilder};
 
     #[tokio::test]
     async fn should_remove_from_tracker() {
         let options = create_start_options();
         let mut packet_handler_builder = PacketHandlerBuilder::new();
+        let mut state_builder = StateBuilder::new();
         
-        let rt = Handle::current();
+        let (opcode, data) = PacketBuilder::zone_object_unpublish(1);
 
-        let opcode = Pkt::ZoneObjectUnpublishNotify;
-        let data = PKTZoneObjectUnpublishNotify {
-            object_id: 1
-        };
-        let data = data.encode().unwrap();
+        let mut state = state_builder.build();
 
-        let (mut state, mut packet_handler) = packet_handler_builder.build();
-        packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
+        let mut packet_handler = packet_handler_builder.build();
+        packet_handler.handle(opcode, &data, &mut state, &options).unwrap();
     }
 }

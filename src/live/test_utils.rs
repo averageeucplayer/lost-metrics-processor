@@ -1,8 +1,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::RwLock;
-use std::time::Duration;
 use std::sync::Arc;
+use chrono::Duration;
 use chrono::Utc;
 use lost_metrics_core::models::DamageStats;
 use lost_metrics_core::models::Encounter;
@@ -15,7 +15,6 @@ use super::encounter_state::EncounterState;
 use super::flags::MockFlags;
 use super::heartbeat_api::MockHeartbeatApi;
 use super::stats_api::MockStatsApi;
-use super::trackers::Trackers;
 use super::StartOptions;
 use super::abstractions::*;
 use super::packet_handler::MockPacketHandler;
@@ -54,10 +53,10 @@ pub fn create_start_options() -> StartOptions {
         port: 420,
         database_path: "encounter.db".into(),
         local_player_path: "local_players.json".into(),
-        raid_end_capture_timeout: Duration::from_secs(10),
+        raid_end_capture_timeout: Duration::seconds(10),
         region_path: "current_region".into(),
-        duration: Duration::from_millis(500),
-        party_duration: Duration::from_millis(200),
+        duration: Duration::milliseconds(500),
+        party_duration: Duration::milliseconds(200),
     }
 }
 
@@ -113,7 +112,6 @@ pub struct PacketCapturerBuilder {
     flags: MockFlags,
     packet_sniffer: MockPacketSniffer,
     packet_handler: MockPacketHandler,
-    trackers: Rc<RefCell<Trackers>>,
     event_emitter: MockEventEmitter,
     event_listener: MockEventListener,
     region_store: MockRegionStore,
@@ -131,8 +129,7 @@ impl PacketCapturerBuilder {
         let flags = MockFlags::new();
         let packet_sniffer  = MockPacketSniffer::new();
         let mut packet_handler  = MockPacketHandler::new();
-        let trackers = Rc::new(RefCell::new(Trackers::new()));
-        let mut state = EncounterState::new(trackers.clone(), options.version.clone());
+        let mut state = EncounterState::new();
         let event_emitter = MockEventEmitter::new();
         let event_listener = MockEventListener::new();
         let region_store = MockRegionStore::new();
@@ -155,7 +152,6 @@ impl PacketCapturerBuilder {
             damage_encryption_handler,
             local_player_store,
             region_store,
-            trackers,
         }
     }
 
@@ -219,7 +215,7 @@ impl PacketCapturerBuilder {
 
         self.packet_handler
             .expect_handle()
-            .returning(|_, _, _, _, _| Ok(()));
+            .returning(|_, _, _, _| Ok(()));
 
         self
     }
@@ -292,11 +288,6 @@ impl PacketCapturerBuilder {
 
     pub fn get_options(&mut self) -> &mut StartOptions {
         &mut self.options
-    }
-
-    pub fn get_state(&mut self) -> EncounterState {
-        let state = EncounterState::new(self.trackers.clone(), self.options.version.clone());
-        state
     }
 
     pub fn start(mut self, state: &mut EncounterState)  {

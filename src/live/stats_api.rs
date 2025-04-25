@@ -30,7 +30,7 @@ pub trait StatsApi : Send + Sync + 'static  {
         region: Option<String>,
     ) -> impl std::future::Future<Output = Option<HashMap<String, PlayerStats>>> + Send;
     fn send_raid_info<'a>(&self, payload: SendRaidInfo<'a>) -> Pin<Box<dyn Future<Output = ()> + Send>>;
-    fn get_stats(&mut self, state: &EncounterState) -> Option<Cache<String, PlayerStats>>;
+    // fn get_stats(&mut self, state: &EncounterState) -> Option<Cache<String, PlayerStats>>;
 }
 
 pub struct DefaultStatsApi {
@@ -40,13 +40,13 @@ pub struct DefaultStatsApi {
 }
 
 impl StatsApi for DefaultStatsApi {
-    fn get_stats(&mut self, state: &EncounterState) -> Option<Cache<String, PlayerStats>> {
-        if !self.valid_difficulty(&state.raid_difficulty) {
-            return None;
-        }
+    // fn get_stats(&mut self, state: &EncounterState) -> Option<Cache<String, PlayerStats>> {
+    //     if !self.valid_difficulty(&state.raid_difficulty) {
+    //         return None;
+    //     }
 
-        Some(self.stats_cache.clone())
-    }
+    //     Some(self.stats_cache.clone())
+    // }
 
     async fn get_character_info(
         &self,
@@ -55,10 +55,6 @@ impl StatsApi for DefaultStatsApi {
         players: Vec<String>,
         region: Option<String>,
     ) -> Option<HashMap<String, PlayerStats>> {
-        if region.is_none() {
-            warn!("region is not set");
-            return None;
-        }
 
         let request_body = json!({
             "clientId": client_id,

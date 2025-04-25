@@ -2,8 +2,7 @@ use crate::live::abstractions::{EventEmitter, LocalPlayerStore, RegionStore};
 use crate::live::encounter_state::EncounterState;
 use crate::live::flags::Flags;
 use crate::live::stats_api::StatsApi;
-use crate::live::status_tracker::get_status_effect_value;
-use crate::live::utils::{on_shield_change, parse_pkt1};
+use crate::live::utils::{get_status_effect_value, on_shield_change};
 use anyhow::Ok;
 use hashbrown::HashMap;
 use log::*;
@@ -25,12 +24,17 @@ where
     ES: EncounterService {
     pub fn on_troop_member_update(&self, data: &[u8], state: &mut EncounterState) -> anyhow::Result<()> {
 
-        let packet = parse_pkt1(&data, PKTTroopMemberUpdateMinNotify::new)?;
-        let mut trackers = self.trackers.borrow_mut();
-        let object_id = trackers.id_tracker.borrow().get_entity_id(packet.character_id);
+        let PKTTroopMemberUpdateMinNotify {
+            character_id,
+            cur_hp,
+            max_hp,
+            status_effect_datas
+        } = PKTTroopMemberUpdateMinNotify::new(&data)?;
+
+        let object_id = state.character_id_to_entity_id.get(&character_id).cloned();
         
         if let Some(object_id) = object_id {
-            let entity = trackers.entity_tracker.get_entity_ref(object_id);
+            let entity = state.entities.get(&object_id);
 
             if let Some(entity) = entity {
                 state
@@ -38,20 +42,21 @@ where
                     .entities
                     .entry(entity.name.clone())
                     .and_modify(|e| {
-                        e.current_hp = packet.cur_hp;
-                        e.max_hp = packet.max_hp;
+                        e.current_hp = cur_hp;
+                        e.max_hp = max_hp;
                     });
             }
-            for se in packet.status_effect_datas.iter() {
+
+            for se in status_effect_datas.iter() {
                 let val = get_status_effect_value(&se.value);
                 let (status_effect, old_value) =
-                        trackers.status_tracker.borrow_mut().sync_status_effect(
-                        se.status_effect_instance_id,
-                        packet.character_id,
-                        object_id,
-                        val,
-                        trackers.entity_tracker.local_character_id,
-                    );
+                        state.sync_status_effect(
+                            se.status_effect_instance_id,
+                            character_id,
+                            object_id,
+                            val,
+                            state.local_character_id,
+                        );
                 if let Some(status_effect) = status_effect {
                     if status_effect.status_effect_type == StatusEffectType::Shield {
                         let change = old_value
@@ -69,16 +74,15 @@ where
                             return Ok(());
                         }
                     
-                        let source = trackers.entity_tracker.get_source_entity(status_effect.source_id);
+                        let target_entity_id = state.character_id_to_entity_id.get(&status_effect.target_id).copied().unwrap_or_default();
+                        let source = state.get_source_entity(status_effect.source_id).clone();
                         let target_id = if status_effect.target_type == StatusEffectTargetType::Party {
-                            trackers.id_tracker
-                                .borrow()
-                                .get_entity_id(status_effect.target_id)
-                                .unwrap_or_default()
+                            target_entity_id
                         } else {
                             status_effect.target_id
                         };
-                        let target = trackers.entity_tracker.get_source_entity(target_id);
+                        let target = state.get_source_entity(target_id).clone();
+
                         state.on_boss_shield(&target, status_effect.value);
                         state.on_shield_used(&source, &target, status_effect.status_effect_id, change);
                     }
@@ -95,28 +99,26 @@ mod tests {
     use lost_metrics_sniffer_stub::packets::opcodes::Pkt;
     use tokio::runtime::Handle;
     use crate::live::{packet_handler::*, test_utils::create_start_options};
-    use crate::live::packet_handler::test_utils::PacketHandlerBuilder;
+    use crate::live::packet_handler::test_utils::{PacketBuilder, PacketHandlerBuilder, StateBuilder, PLAYER_TEMPLATE_BARD};
 
     #[tokio::test]
     async fn should_update_entity_hp() {
         let options = create_start_options();
         let mut packet_handler_builder = PacketHandlerBuilder::new();
-        
-        let rt = Handle::current();
+        let mut state_builder = StateBuilder::new();
 
-        let opcode = Pkt::TroopMemberUpdateMinNotify;
-        let data = PKTTroopMemberUpdateMinNotify {
-            character_id: 1,
-            cur_hp: 3e6 as i64,
-            max_hp: 3e6 as i64,
-            status_effect_datas: vec![]
-        };
-        let data = data.encode().unwrap();
-
-        let entity_name = "test".to_string();
-        packet_handler_builder.create_player_with_character_id(1, 1, entity_name.clone());
+        let player_template = PLAYER_TEMPLATE_BARD;
+        let (opcode, data) = PacketBuilder::troop_member_update(
+            player_template.character_id,
+            0,
+            10000
+        );
         
-        let (mut state, mut packet_handler) = packet_handler_builder.build();
-        packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
+        let mut state = state_builder.build();
+        // let entity_name = "test".to_string();
+        // packet_handler_builder.create_player_with_character_id(1, 1, entity_name.clone());
+        
+        let mut packet_handler = packet_handler_builder.build();
+        packet_handler.handle(opcode, &data, &mut state, &options).unwrap();
     }
 }

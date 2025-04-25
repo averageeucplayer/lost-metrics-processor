@@ -15,32 +15,25 @@ use super::EncounterState;
 impl EncounterState {
     pub fn save_to_db<EE: EventEmitter, ES: EncounterService, SA: StatsApi>(
         &mut self,
+        version: &str,
         client_id: Option<Uuid>,
         stats_api: Arc<Mutex<SA>>,
         manual: bool,
         encounter_service: Arc<ES>,
         event_emitter: Arc<EE>
         ) {
+        let entities = &self.encounter.entities;
+
         if !manual {
             if self.encounter.fight_start == 0
                 || self.encounter.current_boss_name.is_empty()
-                || !self
-                    .encounter
-                    .entities
-                    .contains_key(&self.encounter.current_boss_name)
-                || !self
-                    .encounter
-                    .entities
-                    .values()
-                    .any(|e| e.entity_type == EntityType::Player && e.damage_stats.damage_dealt > 0)
+                || !entities.contains_key(&self.encounter.current_boss_name)
+                || !entities.values().any(|e| e.entity_type == EntityType::Player && e.damage_stats.damage_dealt > 0)
             {
                 return;
             }
 
-            if let Some(current_boss) = self
-                .encounter
-                .entities
-                .get(&self.encounter.current_boss_name)
+            if let Some(current_boss) = entities.get(&self.encounter.current_boss_name)
             {
                 if current_boss.current_hp == current_boss.max_hp {
                     return;
@@ -54,7 +47,6 @@ impl EncounterState {
 
         let mut encounter = self.encounter.clone();
         let prev_stagger = self.prev_stagger;
-
         let damage_log = self.damage_log.clone();
         let identity_log = self.identity_log.clone();
         let cast_log = self.cast_log.clone();
@@ -65,17 +57,11 @@ impl EncounterState {
         let party_info = self.party_info.clone();
         let raid_difficulty = self.raid_difficulty.clone();
         let region = self.region.clone();
-        let version = self.version.clone();
-
         let ntp_fight_start = self.ntp_fight_start;
-
         let rdps_valid = self.rdps_valid;
-
-        let skill_cast_log = self.skill_tracker.get_cast_log();
-
-        // debug_print(format_args!("skill cast log:\n{}", serde_json::to_string(&skill_cast_log).unwrap()));
-
-        // debug_print(format_args!("rdps_data valid: [{}]", rdps_valid));
+        let skill_cast_log = self.get_cast_log();
+        let version = version.to_string();
+        
         info!(
             "saving to db - cleared: [{}], difficulty: [{}] {}",
             raid_clear, self.raid_difficulty, encounter.current_boss_name
@@ -99,7 +85,7 @@ impl EncounterState {
 
                 let valid_party = !players.is_empty() && players.len() <= 16;
 
-                if let Some(client_id) = client_id.filter(|_| valid_party) {
+                if let Some(client_id) = client_id.filter(|_| valid_party && region.is_some()) {
                     stats_api
                         .get_character_info(client_id, &encounter.current_boss_name, players, region.clone())
                         .await

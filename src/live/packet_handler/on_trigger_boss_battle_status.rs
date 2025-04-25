@@ -2,7 +2,6 @@ use crate::live::abstractions::{EventEmitter, LocalPlayerStore, RegionStore};
 use crate::live::encounter_state::EncounterState;
 use crate::live::flags::Flags;
 use crate::live::stats_api::StatsApi;
-use crate::live::utils::parse_pkt1;
 use anyhow::Ok;
 use hashbrown::HashMap;
 use log::*;
@@ -21,7 +20,7 @@ where
     LP: LocalPlayerStore,
     EE: EventEmitter,
     ES: EncounterService {
-    pub fn on_trigger_boss_battle_status(&self, state: &mut EncounterState) -> anyhow::Result<()> {
+    pub fn on_trigger_boss_battle_status(&self, state: &mut EncounterState, version: &str) -> anyhow::Result<()> {
 
         let encounter = &state.encounter;
         // need to hard code clown because it spawns before the trigger is sent???
@@ -30,6 +29,7 @@ where
             || encounter.current_boss_name == "Saydon"
         {
             state.on_phase_transition(
+                version,
                 state.client_id, 3,
                 self.stats_api.clone(),
                 self.encounter_service.clone(),
@@ -48,20 +48,21 @@ mod tests {
     use lost_metrics_sniffer_stub::packets::opcodes::Pkt;
     use tokio::runtime::Handle;
     use crate::live::{packet_handler::*, test_utils::create_start_options};
-    use crate::live::packet_handler::test_utils::PacketHandlerBuilder;
+    use crate::live::packet_handler::test_utils::{PacketBuilder, PacketHandlerBuilder, StateBuilder};
 
     #[tokio::test]
     async fn should_set_reset_flag() {
         let options = create_start_options();
         let mut packet_handler_builder = PacketHandlerBuilder::new();
         packet_handler_builder.ensure_event_called::<i32>("phase-transition".into());
-        let rt = Handle::current();
+        let mut state_builder = StateBuilder::new();
 
-        let opcode = Pkt::TriggerBossBattleStatus;
-        let data = vec![];
+        let (opcode, data) = PacketBuilder::trigger_boss_battle_status();
+
+        let mut state = state_builder.build();
         
-        let (mut state, mut packet_handler) = packet_handler_builder.build();
-        packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
+        let mut packet_handler = packet_handler_builder.build();
+        packet_handler.handle(opcode, &data, &mut state, &options).unwrap();
         assert!(state.resetting);
     }
 }

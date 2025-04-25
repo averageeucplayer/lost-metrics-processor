@@ -2,12 +2,12 @@ use crate::live::abstractions::{EventEmitter, LocalPlayerStore, RegionStore};
 use crate::live::encounter_state::EncounterState;
 use crate::live::flags::Flags;
 use crate::live::stats_api::StatsApi;
-use crate::live::utils::parse_pkt1;
 use anyhow::Ok;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use hashbrown::HashMap;
 use log::*;
 use lost_metrics_core::models::EntityType;
+use lost_metrics_data::EntityExtensions;
 use lost_metrics_sniffer_stub::decryption::DamageEncryptionHandlerTrait;
 use lost_metrics_sniffer_stub::packets::definitions::*;
 use lost_metrics_store::encounter_service::EncounterService;
@@ -23,14 +23,14 @@ where
     LP: LocalPlayerStore,
     EE: EventEmitter,
     ES: EncounterService {
-    pub fn on_skill_start(&self, data: &[u8], state: &mut EncounterState) -> anyhow::Result<()> {
+    pub fn on_skill_start(&self, now: DateTime<Utc>, data: &[u8], state: &mut EncounterState) -> anyhow::Result<()> {
 
-        let entity_tracker = &mut self.trackers.borrow_mut().entity_tracker;
-        let packet = parse_pkt1(&data, PKTSkillStartNotify::new)?;
+        let packet = PKTSkillStartNotify::new(&data)?;
         let skill_id = packet.skill_id;
 
-        let mut entity = entity_tracker.get_source_entity(packet.source_id);
-        entity_tracker.guess_is_player(&mut entity, packet.skill_id);
+        let mut entity = state.get_source_entity(packet.source_id).clone();
+        // state.guess_is_player(entity, packet.skill_id);
+        entity.guess_is_player(skill_id);
         let skill_option_data = packet.skill_option_data;
 
         let tripod_index =
@@ -47,7 +47,7 @@ where
                     second: tripod_level.second,
                     third: tripod_level.third,
                 });
-        let timestamp = Utc::now().timestamp_millis();
+        let timestamp = now.timestamp_millis();
         let (skill_id, summon_source) = state.on_skill_start(
             &entity,
             skill_id,
@@ -57,9 +57,7 @@ where
         );
 
         if entity.entity_type == EntityType::Player && skill_id > 0 {
-            state
-                .skill_tracker
-                .new_cast(entity.id, skill_id, summon_source, timestamp);
+            state.new_cast(entity.id, skill_id, summon_source, timestamp);
         }
 
         Ok(())
@@ -72,39 +70,25 @@ mod tests {
     use lost_metrics_sniffer_stub::packets::opcodes::Pkt;
     use tokio::runtime::Handle;
     use crate::live::{packet_handler::*, test_utils::create_start_options};
-    use crate::live::packet_handler::test_utils::PacketHandlerBuilder;
+    use crate::live::packet_handler::test_utils::{PacketBuilder, PacketHandlerBuilder, StateBuilder, PLAYER_TEMPLATE_SOULEATER};
 
     #[tokio::test]
     async fn should_register_skill_in_tracker() {
         let options = create_start_options();
         let mut packet_handler_builder = PacketHandlerBuilder::new();
-        let rt = Handle::current();
+        let mut state_builder = StateBuilder::new();
 
-        let opcode = Pkt::SkillStartNotify;
-        let data = PKTSkillStartNotify {
-            source_id: 1,
-            skill_id: 21090,
-            skill_option_data: PKTSkillStartNotifyInner {
-                tripod_index: Some(TripodIndex {
-                    first: 1,
-                    second: 1,
-                    third: 1
-                }),
-                tripod_level: Some(TripodLevel {
-                    first: 1,
-                    second: 1,
-                    third: 1
-                }),
-            }
-        };
-        let data = data.encode().unwrap();
+        let player_template = PLAYER_TEMPLATE_SOULEATER;
+        let (opcode, data) = PacketBuilder::skill_start(1, 1);
     
-        packet_handler_builder.create_unknown(1);
+        // packet_handler_builder.create_unknown(1);
 
-        let (mut state, mut packet_handler) = packet_handler_builder.build();
+        state_builder.create_player(&player_template);
+        state_builder.set_fight_start();
+        let mut state = state_builder.build();
 
-        state.encounter.fight_start = Utc::now().timestamp_millis();
+        let mut packet_handler = packet_handler_builder.build();
 
-        packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
+        packet_handler.handle(opcode, &data, &mut state, &options).unwrap();
     }
 }

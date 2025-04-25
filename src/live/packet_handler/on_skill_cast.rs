@@ -2,11 +2,12 @@ use crate::live::abstractions::{EventEmitter, LocalPlayerStore, RegionStore};
 use crate::live::encounter_state::EncounterState;
 use crate::live::flags::Flags;
 use crate::live::stats_api::StatsApi;
-use crate::live::utils::parse_pkt1;
 use anyhow::Ok;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use hashbrown::HashMap;
 use log::*;
+use lost_metrics_core::models::Class;
+use lost_metrics_data::EntityExtensions;
 use lost_metrics_sniffer_stub::decryption::DamageEncryptionHandlerTrait;
 use lost_metrics_sniffer_stub::packets::definitions::*;
 use lost_metrics_store::encounter_service::EncounterService;
@@ -22,22 +23,23 @@ where
     LP: LocalPlayerStore,
     EE: EventEmitter,
     ES: EncounterService {
-    pub fn on_skill_cast(&self, data: &[u8], state: &mut EncounterState) -> anyhow::Result<()> {
+    pub fn on_skill_cast(&self, now: DateTime<Utc>, data: &[u8], state: &mut EncounterState) -> anyhow::Result<()> {
 
-        let entity_tracker = &mut self.trackers.borrow_mut().entity_tracker;
-        let packet = parse_pkt1(&data, PKTSkillCastNotify::new)?;
-        let skill_id = packet.skill_id;
+        let PKTSkillCastNotify {
+            skill_id,
+            source_id
+        } = PKTSkillCastNotify::new(&data)?;
 
-        let mut entity = entity_tracker.get_source_entity(packet.source_id);
-        entity_tracker.guess_is_player(&mut entity, packet.skill_id);
+        let mut entity = state.get_source_entity(source_id).clone();
+        entity.guess_is_player(skill_id);
 
-        if entity.class_id == 202 {
+        if entity.class_id == Class::Arcanist as u32 {
             state.on_skill_start(
                 &entity,
                 skill_id,
                 None,
                 None,
-                Utc::now().timestamp_millis(),
+                now.timestamp_millis(),
             );
         }
 
@@ -50,26 +52,25 @@ mod tests {
     use lost_metrics_sniffer_stub::packets::opcodes::Pkt;
     use tokio::runtime::Handle;
     use crate::live::{packet_handler::*, test_utils::create_start_options};
-    use crate::live::packet_handler::test_utils::PacketHandlerBuilder;
+    use crate::live::packet_handler::test_utils::{PacketBuilder, PacketHandlerBuilder, StateBuilder, PLAYER_TEMPLATE_SORCERESS};
 
     #[tokio::test]
     async fn should_update_entity() {
         let options = create_start_options();
         let mut packet_handler_builder = PacketHandlerBuilder::new();
+        let mut state_builder = StateBuilder::new();
         
-        let rt = Handle::current();
+      
 
-        let opcode = Pkt::SkillCastNotify;
-        let data = PKTSkillCastNotify {
-            skill_id: 21090,
-            source_id: 1
-        };
-        let data = data.encode().unwrap();
+        let template = PLAYER_TEMPLATE_SORCERESS;
+        let (opcode, data) = PacketBuilder::skill_cast(template.id, SorceressSkills::Doomsday as u32);
+        state_builder.create_player(&template);
 
-        packet_handler_builder.create_unknown(1);
+        // packet_handler_builder.create_unknown(1);
+        let mut state = state_builder.build();
         
-        let (mut state, mut packet_handler) = packet_handler_builder.build();
+        let mut packet_handler = packet_handler_builder.build();
 
-        packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
+        packet_handler.handle(opcode, &data, &mut state, &options).unwrap();
     }
 }

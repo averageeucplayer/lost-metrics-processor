@@ -1,6 +1,7 @@
-use std::{cell::RefCell, path::PathBuf, rc::Rc, sync::{Arc, RwLock}, thread::JoinHandle, time::Duration};
-use crate::{constants::LOW_PERFORMANCE_MODE_DURATION, live::{self, trackers::Trackers}};
+use std::{cell::RefCell, path::PathBuf, rc::Rc, sync::{Arc, RwLock}, thread::JoinHandle};
+use crate::{constants::LOW_PERFORMANCE_MODE_DURATION, live::{self}};
 use crate::live::{abstractions::{file_system::FileSystem, *}, encounter_state::EncounterState, flags::{AtomicBoolFlags, Flags}, heartbeat_api::DefaultHeartbeatApi, packet_handler::DefaultPacketHandler, stats_api::DefaultStatsApi, StartOptions};
+use chrono::Duration;
 use log::{error, info};
 use anyhow::{Ok, Result};
 use lost_metrics_sniffer_stub::decryption::DamageEncryptionHandler;
@@ -41,9 +42,9 @@ impl BackgroundWorker {
             region_path: executable_directory.join("current_region").clone(),
             local_player_path: executable_directory.join("local_players.json").clone(),
             database_path: executable_directory.join("encounters.db").clone(),
-            raid_end_capture_timeout: Duration::from_secs(10),
-            duration: Duration::from_millis(500),
-            party_duration: Duration::from_millis(2000)
+            raid_end_capture_timeout: Duration::seconds(10),
+            duration: Duration::milliseconds(500),
+            party_duration: Duration::milliseconds(2000)
         };
 
         options
@@ -95,13 +96,11 @@ impl BackgroundWorker {
         let heartbeat_api = Arc::new(Mutex::new(DefaultHeartbeatApi::new()));
         let stats_api = Arc::new(Mutex::new(DefaultStatsApi::new(options.version.clone())));
         let packet_sniffer = PacketSnifferStub::new();
-        let trackers = Rc::new(RefCell::new(Trackers::new()));
 
         let damage_encryption_handler = Arc::new(DamageEncryptionHandler::new());
         let mut packet_handler = DefaultPacketHandler::new(
             flags.clone(),
             damage_encryption_handler.clone(),
-            trackers.clone(),
             local_player_store.clone(),
             event_emitter.clone(),
             region_store.clone(),
@@ -109,9 +108,7 @@ impl BackgroundWorker {
             stats_api.clone(),
         );
             
-        let mut state = EncounterState::new(
-            trackers,
-            options.version.clone());
+        let mut state = EncounterState::new();
 
         live::start(
             flags,

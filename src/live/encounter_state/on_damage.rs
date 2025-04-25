@@ -77,9 +77,9 @@ impl EncounterState {
 
         if self.encounter.fight_start == 0 {
             self.encounter.fight_start = timestamp;
-            self.skill_tracker.fight_start = timestamp;
+            self.fight_start = timestamp;
             if source_entity.entity_type == EntityType::Player && damage_data.skill_id > 0 {
-                self.skill_tracker.new_cast(
+                self.new_cast(
                     source_entity.id,
                     damage_data.skill_id,
                     None,
@@ -132,7 +132,7 @@ impl EncounterState {
                 &skill_id,
                 &skill_effect_id,
                 skill_id.to_string(),
-                &self.skill_tracker.skill_timestamp,
+                &self.skill_timestamp,
                 source_entity.id,
             );
         }
@@ -150,7 +150,7 @@ impl EncounterState {
                     &skill_id,
                     &skill_effect_id,
                     skill_name.clone(),
-                    &self.skill_tracker.skill_timestamp,
+                    &self.skill_timestamp,
                     source_entity.id,
                 );
                 source_entity.skills.insert(
@@ -465,7 +465,7 @@ impl EncounterState {
         }
 
         if skill_id > 0 {
-            self.skill_tracker.on_hit(
+            self.on_hit(
                 source_entity.id,
                 proj_entity.id,
                 skill_id,

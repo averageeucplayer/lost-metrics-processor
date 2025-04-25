@@ -2,7 +2,6 @@ use crate::live::abstractions::{EventEmitter, LocalPlayerStore, RegionStore};
 use crate::live::encounter_state::EncounterState;
 use crate::live::flags::Flags;
 use crate::live::stats_api::StatsApi;
-use crate::live::utils::parse_pkt1;
 use anyhow::Ok;
 use hashbrown::HashMap;
 use log::*;
@@ -24,7 +23,7 @@ where
     ES: EncounterService {
     pub fn on_raid_begin(&self, data: &[u8], state: &mut EncounterState) -> anyhow::Result<()> {
 
-        let packet = parse_pkt1(&data, PKTRaidBegin::new)?;
+        let packet = PKTRaidBegin::new(&data)?;
 
         info!("raid begin: {}", packet.raid_id);
         match packet.raid_id {
@@ -55,25 +54,39 @@ mod tests {
     use lost_metrics_sniffer_stub::packets::opcodes::Pkt;
     use tokio::runtime::Handle;
     use crate::live::{packet_handler::*, test_utils::create_start_options};
-    use crate::live::packet_handler::test_utils::PacketHandlerBuilder;
+    use crate::live::packet_handler::test_utils::{PacketBuilder, PacketHandlerBuilder, StateBuilder};
 
     #[tokio::test]
-    async fn should_update_raid_difficulty() {
+    async fn should_update_raid_difficulty_to_trial() {
         let options = create_start_options();
         let mut packet_handler_builder = PacketHandlerBuilder::new();
+        let mut state_builder = StateBuilder::new();
         
-        let rt = Handle::current();
+        let (opcode, data) = PacketBuilder::raid_begin(308226);
 
-        let opcode = Pkt::RaidBegin;
-        let data = PKTRaidBegin {
-            raid_id: 308226
-        };
-        let data = data.encode().unwrap();
+        let mut state = state_builder.build();
         
-        let (mut state, mut packet_handler) = packet_handler_builder.build();
-        packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
+        let mut packet_handler = packet_handler_builder.build();
+        packet_handler.handle(opcode, &data, &mut state, &options).unwrap();
 
         assert_eq!(state.raid_difficulty, "Trial");
         assert_eq!(state.raid_difficulty_id, 7);
+    }
+
+    #[tokio::test]
+    async fn should_update_raid_difficulty_to_challenge() {
+        let options = create_start_options();
+        let mut packet_handler_builder = PacketHandlerBuilder::new();
+        let mut state_builder = StateBuilder::new();
+        
+        let (opcode, data) = PacketBuilder::raid_begin(308226);
+
+        let mut state = state_builder.build();
+        
+        let mut packet_handler = packet_handler_builder.build();
+        packet_handler.handle(opcode, &data, &mut state, &options).unwrap();
+
+        assert_eq!(state.raid_difficulty, "Challenge");
+        assert_eq!(state.raid_difficulty_id, 8);
     }
 }

@@ -1,8 +1,8 @@
+use crate::constants::RAID_DIFFICULTIES;
 use crate::live::abstractions::{EventEmitter, LocalPlayerStore, RegionStore};
 use crate::live::encounter_state::EncounterState;
 use crate::live::flags::Flags;
 use crate::live::stats_api::StatsApi;
-use crate::live::utils::parse_pkt1;
 use anyhow::Ok;
 use hashbrown::HashMap;
 use log::*;
@@ -12,15 +12,6 @@ use lost_metrics_sniffer_stub::packets::definitions::*;
 use lost_metrics_store::encounter_service::EncounterService;
 
 use super::DefaultPacketHandler;
-
-const RAID_DIFFICULTIES: &[(&str, u32)] = &[
-    ("Normal", 0),
-    ("Hard", 1),
-    ("Inferno", 2),
-    ("Challenge", 3),
-    ("Solo", 4),
-    ("The First", 5),
-];
 
 impl<FL, DH, SA, RS, LP, EE, ES> DefaultPacketHandler<FL, DH, SA, RS, LP, EE, ES>
 where
@@ -33,7 +24,7 @@ where
     ES: EncounterService {
     pub fn on_zone_member_load(&self, data: &[u8], state: &mut EncounterState) -> anyhow::Result<()> {
 
-        let packet = parse_pkt1(&data, PKTZoneMemberLoadStatusNotify::new)?;
+        let packet = PKTZoneMemberLoadStatusNotify::new(&data)?;
 
         state.is_valid_zone = VALID_ZONES.contains(&packet.zone_id);
 
@@ -58,14 +49,13 @@ mod tests {
     use lost_metrics_sniffer_stub::packets::opcodes::Pkt;
     use tokio::runtime::Handle;
     use crate::live::{packet_handler::*, test_utils::create_start_options};
-    use crate::live::packet_handler::test_utils::PacketHandlerBuilder;
+    use crate::live::packet_handler::test_utils::{PacketHandlerBuilder, StateBuilder};
 
     #[tokio::test]
     async fn should_set_raid_difficulty() {
         let options = create_start_options();
         let mut packet_handler_builder = PacketHandlerBuilder::new();
-        
-        let rt = Handle::current();
+        let mut state_builder = StateBuilder::new();
 
         let opcode = Pkt::ZoneMemberLoadStatusNotify;
         let data = PKTZoneMemberLoadStatusNotify {
@@ -73,8 +63,10 @@ mod tests {
             zone_level: 1
         };
         let data = data.encode().unwrap();
+
+        let mut state = state_builder.build();
         
-        let (mut state, mut packet_handler) = packet_handler_builder.build();
-        packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
+        let mut packet_handler = packet_handler_builder.build();
+        packet_handler.handle(opcode, &data, &mut state, &options).unwrap();
     }
 }

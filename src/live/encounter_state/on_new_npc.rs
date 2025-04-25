@@ -9,7 +9,12 @@ impl EncounterState {
     // we set current boss if npc matches criteria
     pub fn on_new_npc(&mut self, entity: Entity, hp: i64, max_hp: i64) {
         let entity_name = entity.name.clone();
-        self.encounter
+        let new_boss_with_more_hp = self
+            .encounter
+            .entities
+            .get(&self.encounter.current_boss_name)
+            .map_or(true, |boss| max_hp >= boss.max_hp || boss.is_dead);
+        let entity = self.encounter
             .entities
             .entry(entity_name.clone())
             .and_modify(|e| {
@@ -28,27 +33,22 @@ impl EncounterState {
                 }
             })
             .or_insert_with(|| {
-                let mut npc = encounter_entity_from_entity(&entity);
+                let mut npc: EncounterEntity = entity.into();
                 npc.current_hp = hp;
                 npc.max_hp = max_hp;
                 npc
             });
 
-        if let Some(npc) = self.encounter.entities.get(&entity_name) {
-            if npc.entity_type == EntityType::Boss {
-                // if current encounter has no boss, we set the boss
-                // if current encounter has a boss, we check if new boss has more max hp, or if current boss is dead
-                self.encounter.current_boss_name = if self
-                    .encounter
-                    .entities
-                    .get(&self.encounter.current_boss_name)
-                    .map_or(true, |boss| npc.max_hp >= boss.max_hp || boss.is_dead)
-                {
-                    entity_name
-                } else {
-                    self.encounter.current_boss_name.clone()
-                };
-            }
+        if entity.entity_type == EntityType::Boss {
+            // if current encounter has no boss, we set the boss
+            // if current encounter has a boss, we check if new boss has more max hp, or if current boss is dead
+
+            self.encounter.current_boss_name = if new_boss_with_more_hp
+            {
+                entity_name
+            } else {
+                self.encounter.current_boss_name.clone()
+            };
         }
     }
    

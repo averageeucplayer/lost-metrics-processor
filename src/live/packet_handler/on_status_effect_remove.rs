@@ -25,11 +25,10 @@ where
     ES: EncounterService {
     pub fn on_status_effect_remove(&self, data: &[u8], state: &mut EncounterState) -> anyhow::Result<()> {
 
-        let trackers = &mut self.trackers.borrow_mut();
-        let packet = parse_pkt1(&data, PKTStatusEffectRemoveNotify::new)?;
+        let packet = PKTStatusEffectRemoveNotify::new(&data)?;
 
         let (is_shield, shields_broken, effects_removed, _left_workshop) =
-        trackers.status_tracker.borrow_mut().remove_status_effects(
+        state.remove_status_effects(
             packet.object_id,
             packet.status_effect_instance_ids,
             packet.reason,
@@ -38,16 +37,16 @@ where
         
         if is_shield {
             if shields_broken.is_empty() {
-                let target = trackers.entity_tracker.get_source_entity(packet.object_id);
+                let target = state.get_source_entity(packet.object_id).clone();
                 state.on_boss_shield(&target, 0);
             } else {
                 for status_effect in shields_broken {
                     let change = status_effect.value;
 
                     let target_id = if status_effect.target_type == StatusEffectTargetType::Party {
-                        trackers.id_tracker
-                            .borrow()
-                            .get_entity_id(status_effect.target_id)
+                        state.character_id_to_entity_id
+                            .get(&status_effect.target_id)
+                            .copied()
                             .unwrap_or_default()
                     } else {
                         status_effect.target_id
@@ -57,9 +56,8 @@ where
                         continue;
                     }
                     
-                    let entity_tracker = &mut trackers.entity_tracker;
-                    let source = entity_tracker.get_source_entity(status_effect.source_id);
-                    let target = entity_tracker.get_source_entity(target_id);
+                    let source = state.get_source_entity(status_effect.source_id).clone();
+                    let target = state.get_source_entity(target_id).clone();
                     state.on_boss_shield(&target, status_effect.value);
                     state.on_shield_used(&source, &target, status_effect.status_effect_id, change);
                 }
@@ -69,7 +67,7 @@ where
         let now = Utc::now().timestamp_millis();
         for effect_removed in effects_removed {
             if effect_removed.status_effect_type == StatusEffectType::HardCrowdControl {
-                let target = trackers.entity_tracker.get_source_entity(effect_removed.target_id);
+                let target = state.get_source_entity(effect_removed.target_id).clone();
                 if target.entity_type == EntityType::Player {
                     state.on_cc_removed(&target, &effect_removed, now);
                 }
@@ -85,14 +83,13 @@ mod tests {
     use lost_metrics_sniffer_stub::packets::opcodes::Pkt;
     use tokio::runtime::Handle;
     use crate::live::{packet_handler::*, test_utils::create_start_options};
-    use crate::live::packet_handler::test_utils::PacketHandlerBuilder;
+    use crate::live::packet_handler::test_utils::{PacketHandlerBuilder, StateBuilder};
 
     #[tokio::test]
     async fn should_register_status_effect() {
         let options = create_start_options();
         let mut packet_handler_builder = PacketHandlerBuilder::new();
-        
-        let rt = Handle::current();
+        let mut state_builder = StateBuilder::new();
 
         let opcode = Pkt::StatusEffectRemoveNotify;
         let data = PKTStatusEffectRemoveNotify {
@@ -103,10 +100,12 @@ mod tests {
         };
         let data = data.encode().unwrap();
 
-        packet_handler_builder.create_player(1, "Player_1".into());
-        packet_handler_builder.create_player(2, "Player_2".into());
+        let mut state = state_builder.build();
+
+        // packet_handler_builder.create_player(1, "Player_1".into());
+        // packet_handler_builder.create_player(2, "Player_2".into());
         
-        let (mut state, mut packet_handler) = packet_handler_builder.build();
-        packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
+        let mut packet_handler = packet_handler_builder.build();
+        packet_handler.handle(opcode, &data, &mut state, &options).unwrap();
     }
 }

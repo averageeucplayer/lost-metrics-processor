@@ -4,8 +4,8 @@ use crate::live::abstractions::{EventEmitter, LocalPlayerStore, RegionStore};
 use crate::live::encounter_state::EncounterState;
 use crate::live::flags::Flags;
 use crate::live::stats_api::StatsApi;
-use crate::live::utils::parse_pkt1;
 use anyhow::Ok;
+use chrono::{DateTime, Utc};
 use hashbrown::HashMap;
 use log::*;
 use lost_metrics_sniffer_stub::decryption::DamageEncryptionHandlerTrait;
@@ -23,24 +23,25 @@ where
     LP: LocalPlayerStore,
     EE: EventEmitter,
     ES: EncounterService {
-    pub fn on_trigger_start(&self, data: &[u8], state: &mut EncounterState) -> anyhow::Result<()> {
+    pub fn on_trigger_start(&self, now: DateTime<Utc>, data: &[u8], state: &mut EncounterState, version: &str) -> anyhow::Result<()> {
 
-        let packet = parse_pkt1(&data, PKTTriggerStartNotify::new)?;
+        let packet = PKTTriggerStartNotify::new(&data)?;
         match packet.signal {
             57 | 59 | 61 | 63 | 74 | 76 => {
                 state.party_freeze = true;
                 state.party_info = if let Some(party) = state.party_cache.take() {
                     party
                 } else {
-                    state.get_party_from_tracker()
+                    state.get_party()
                 };
                 state.raid_clear = true;
                 state.on_phase_transition(
+                    version,
                     state.client_id,
                     2,
                     self.stats_api.clone(),
                     self.encounter_service.clone(), self.event_emitter.clone());
-                state.raid_end_cd = Instant::now();
+                state.raid_end_cd = now;
                 info!("phase: 2 - clear - TriggerStartNotify");
             }
             58 | 60 | 62 | 64 | 75 | 77 => {
@@ -48,16 +49,17 @@ where
                 state.party_info = if let Some(party) = state.party_cache.take() {
                     party
                 } else {
-                    state.get_party_from_tracker()
+                    state.get_party()
                 };
                 state.raid_clear = false;
                 state.on_phase_transition(
+                    version,
                     state.client_id,
                     4,
                     self.stats_api.clone(),
                     self.encounter_service.clone(),
                     self.event_emitter.clone());
-                state.raid_end_cd = Instant::now();
+                state.raid_end_cd = now;
                 info!("phase: 4 - wipe - TriggerStartNotify");
             }
             27 | 10 | 11 => {
@@ -75,23 +77,21 @@ mod tests {
     use lost_metrics_sniffer_stub::packets::opcodes::Pkt;
     use tokio::runtime::Handle;
     use crate::live::{packet_handler::*, test_utils::create_start_options};
-    use crate::live::packet_handler::test_utils::PacketHandlerBuilder;
+    use crate::live::packet_handler::test_utils::{PacketBuilder, PacketHandlerBuilder, StateBuilder};
 
     #[tokio::test]
     async fn should_set_reset_flag() {
         let options = create_start_options();
         let mut packet_handler_builder = PacketHandlerBuilder::new();
         packet_handler_builder.ensure_event_called::<i32>("phase-transition".into());
-        let rt = Handle::current();
+        let mut state_builder = StateBuilder::new();
 
-        let opcode = Pkt::TriggerStartNotify;
-        let data = PKTTriggerStartNotify {
-            signal: 57,
-        };
-        let data = data.encode().unwrap();
+        let (opcode, data) = PacketBuilder::trigger_start(57);
         
-        let (mut state, mut packet_handler) = packet_handler_builder.build();
-        packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
+        let mut state = state_builder.build();
+        
+        let mut packet_handler = packet_handler_builder.build();
+        packet_handler.handle(opcode, &data, &mut state, &options).unwrap();
         assert!(state.resetting);
     }
 }

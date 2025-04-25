@@ -2,7 +2,6 @@ use crate::live::abstractions::{EventEmitter, LocalPlayerStore, RegionStore};
 use crate::live::encounter_state::EncounterState;
 use crate::live::flags::Flags;
 use crate::live::stats_api::StatsApi;
-use crate::live::utils::parse_pkt1;
 use anyhow::Ok;
 use log::*;
 use lost_metrics_core::models::Identity;
@@ -27,7 +26,7 @@ where
             return Ok(());
         }
 
-        let packet = parse_pkt1(&data, PKTIdentityGaugeChangeNotify::new)?;
+        let packet = PKTIdentityGaugeChangeNotify::new(&data)?;
 
         state.on_identity_gain(&packet);
         if self.flags.can_emit_details() {
@@ -49,7 +48,7 @@ mod tests {
     use lost_metrics_sniffer_stub::packets::opcodes::Pkt;
     use tokio::runtime::Handle;
     use crate::live::{packet_handler::*, test_utils::create_start_options};
-    use crate::live::packet_handler::test_utils::PacketHandlerBuilder;
+    use crate::live::packet_handler::test_utils::{PacketBuilder, PacketHandlerBuilder, StateBuilder, PLAYER_TEMPLATE_BERSERKER};
     
     #[tokio::test]
     async fn should_send_event() {
@@ -57,22 +56,16 @@ mod tests {
         let mut packet_handler_builder = PacketHandlerBuilder::new();
         packet_handler_builder.ensure_flag_can_emit_details_called(true);
         packet_handler_builder.ensure_event_called::<Identity>("identity-update".into());
-        let rt = Handle::current();
+        let mut state_builder = StateBuilder::new();
 
-        let opcode = Pkt::IdentityGaugeChangeNotify;
-        let data = PKTIdentityGaugeChangeNotify {
-            player_id: 1,
-            identity_gauge1: 1,
-            identity_gauge2: 1,
-            identity_gauge3: 1
-        };
-        let data = data.encode().unwrap();
+        let template = PLAYER_TEMPLATE_BERSERKER;
+        let (opcode, data) = PacketBuilder::identity_change(template.id);
+        state_builder.create_player(&template);
 
-        let entity_name = "test".to_string();
-        packet_handler_builder.create_player(1, entity_name.clone());
+        let mut state = state_builder.build();
         
-        let (mut state, mut packet_handler) = packet_handler_builder.build();
-        packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
+        let mut packet_handler = packet_handler_builder.build();
+        packet_handler.handle(opcode, &data, &mut state, &options).unwrap();
     }
 
     #[tokio::test]
@@ -80,26 +73,19 @@ mod tests {
         let options = create_start_options();
         let mut packet_handler_builder = PacketHandlerBuilder::new();
         packet_handler_builder.ensure_flag_can_emit_details_called(false);
-        let rt = Handle::current();
+        let mut state_builder = StateBuilder::new();
 
-        let opcode = Pkt::IdentityGaugeChangeNotify;
-        let data = PKTIdentityGaugeChangeNotify {
-            player_id: 1,
-            identity_gauge1: 1,
-            identity_gauge2: 1,
-            identity_gauge3: 1
-        };
-        let data = data.encode().unwrap();
-
-        let entity_name = "test".to_string();
-        packet_handler_builder.create_player(1, entity_name.clone());
+        let template = PLAYER_TEMPLATE_BERSERKER;
+        let (opcode, data) = PacketBuilder::identity_change(template.id);
+        state_builder.create_player(&template);
         
-        let (mut state, mut packet_handler) = packet_handler_builder.build();
-        state.encounter.fight_start = Utc::now().timestamp_millis();
-        state.encounter.local_player = entity_name.clone();
-        packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
+        let mut state = state_builder.build();
+        
+        let mut packet_handler = packet_handler_builder.build();
+
+        packet_handler.handle(opcode, &data, &mut state, &options).unwrap();
     
-        let identity_log = state.identity_log.get(&entity_name).unwrap();
+        let identity_log = state.identity_log.get(template.name).unwrap();
         assert_eq!(identity_log.is_empty(), false);
     }
 }

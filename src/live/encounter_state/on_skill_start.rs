@@ -33,7 +33,7 @@ impl EncounterState {
                     &skill_id,
                     &0,
                     skill_name.clone(),
-                    &self.skill_tracker.skill_timestamp,
+                    &self.skill_timestamp,
                     source_entity.id,
                 );
                 let mut entity = encounter_entity_from_entity(source_entity);
@@ -109,7 +109,7 @@ impl EncounterState {
                 &skill_id,
                 &0,
                 skill_name.clone(),
-                &self.skill_tracker.skill_timestamp,
+                &self.skill_timestamp,
                 source_entity.id,
             );
             skill_summon_sources.clone_from(&summons);

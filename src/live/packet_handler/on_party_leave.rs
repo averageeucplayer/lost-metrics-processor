@@ -2,7 +2,6 @@ use crate::live::abstractions::{EventEmitter, LocalPlayerStore, RegionStore};
 use crate::live::encounter_state::EncounterState;
 use crate::live::flags::Flags;
 use crate::live::stats_api::StatsApi;
-use crate::live::utils::parse_pkt1;
 use anyhow::Ok;
 use hashbrown::HashMap;
 use log::*;
@@ -23,11 +22,16 @@ where
     ES: EncounterService {
     pub fn on_party_leave(&self, data: &[u8], state: &mut EncounterState) -> anyhow::Result<()> {
 
-        let packet = parse_pkt1(&data, PKTPartyLeaveResult::new)?;
+        let PKTPartyLeaveResult {
+            name,
+            party_instance_id
+        }  = PKTPartyLeaveResult::new(&data)?;
 
-        self.trackers.borrow().party_tracker
-            .borrow_mut()
-            .remove(packet.party_instance_id, packet.name);
+        if state.local_player_name.as_ref().filter(|pr| *pr == &name).is_some() {
+            state.character_id_to_party_id.retain(|_, &mut p_id| p_id != party_instance_id);
+            state.entity_id_to_party_id.retain(|_, &mut p_id| p_id != party_instance_id);
+        }
+
         state.party_cache = None;
         state.party_map_cache = HashMap::new();
 
@@ -40,26 +44,21 @@ mod tests {
     use lost_metrics_sniffer_stub::packets::opcodes::Pkt;
     use tokio::runtime::Handle;
     use crate::live::{packet_handler::*, test_utils::create_start_options};
-    use crate::live::packet_handler::test_utils::PacketHandlerBuilder;
+    use crate::live::packet_handler::test_utils::{PacketBuilder, PacketHandlerBuilder, StateBuilder};
 
     #[tokio::test]
-    async fn should_update_party_tracker() {
+    async fn should_update_references() {
         let options = create_start_options();
         let mut packet_handler_builder = PacketHandlerBuilder::new();
-        
-        let local_info = LocalInfo::default();
-        packet_handler_builder.setup_local_store_get(local_info);
-        
-        let rt = Handle::current();
+        let mut state_builder = StateBuilder::new();
 
-        let opcode = Pkt::PartyLeaveResult;
-        let data = PKTPartyLeaveResult {
-            name: "test".into(),
-            party_instance_id: 1
-        };
-        let data = data.encode().unwrap();
-        
-        let (mut state, mut packet_handler) = packet_handler_builder.build();
-        packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
+        let name = "test".to_string();
+        let (opcode, data) = PacketBuilder::party_leave(name.clone(), 1);
+
+        state_builder.set_local_player_name(name);
+        let mut state = state_builder.build();
+
+        let mut packet_handler = packet_handler_builder.build();
+        packet_handler.handle(opcode, &data, &mut state, &options).unwrap();
     }
 }

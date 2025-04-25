@@ -1,23 +1,24 @@
 use std::fmt::Debug;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Instant};
 
 use anyhow::Ok;
+use chrono::{DateTime, Duration, Utc};
 use hashbrown::HashMap;
 use log::warn;
 use lost_metrics_core::models::*;
 use lost_metrics_data::*;
 use lost_metrics_misc::*;
 use lost_metrics_sniffer_stub::packets::definitions::PKTPartyStatusEffectRemoveNotify;
-use lost_metrics_sniffer_stub::packets::structures::StatPair;
+use lost_metrics_sniffer_stub::packets::structures::{StatPair, StatusEffectData};
 use std::any::type_name;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::constants::TIMEOUT_DELAY_MS;
+
 use super::abstractions::EventEmitter;
 use super::encounter_state::EncounterState;
-use super::entity_tracker::EntityTracker;
-use super::id_tracker::IdTracker;
 use super::StartOptions;
 
 pub fn encounter_entity_from_entity(entity: &Entity) -> EncounterEntity {
@@ -74,8 +75,6 @@ pub fn get_skill_id(new_skill: u32) -> u32 {
 }
 
 pub fn on_shield_change(
-    entity_tracker: &mut EntityTracker,
-    id_tracker: &Rc<RefCell<IdTracker>>,
     state: &mut EncounterState,
     status_effect: StatusEffectDetails,
     change: u64,
@@ -84,44 +83,21 @@ pub fn on_shield_change(
         return;
     }
 
-    let source = entity_tracker.get_source_entity(status_effect.source_id);
     let target_id = if status_effect.target_type == StatusEffectTargetType::Party {
-        id_tracker
-            .borrow()
-            .get_entity_id(status_effect.target_id)
-            .unwrap_or_default()
+        state.character_id_to_entity_id.get(&status_effect.target_id).cloned().unwrap_or_default()
     } else {
         status_effect.target_id
     };
-    let target = entity_tracker.get_source_entity(target_id);
+    
+    let target = state.get_source_entity(target_id).clone();
+    let source = state.get_source_entity(status_effect.source_id).clone();
+
+    
+
     state.on_boss_shield(&target, status_effect.value);
-    state.on_shield_used(&source, &target, status_effect.status_effect_id, change);
+    // state.on_shield_used(&source, &target, status_effect.status_effect_id, change);
 }
 
-#[deprecated(
-    note = "Use `parse_pkt1`"
-)]
-pub fn parse_pkt<T, F>(data: &[u8], new_fn: F) -> Option<T>
-where
-    T: Debug,
-    F: FnOnce(&[u8]) -> Result<T, anyhow::Error>,
-{
-    match new_fn(data) {
-        std::result::Result::Ok(packet) => Some(packet),
-        Err(e) => {
-            warn!("Error parsing {}: {}", type_name::<T>(), e);
-            None
-        }
-    }
-}
-
-pub fn parse_pkt1<T, F>(data: &[u8], new_fn: F) -> anyhow::Result<T>
-    where
-        T: Debug,
-        F: FnOnce(&[u8]) -> Result<T, anyhow::Error>,
-{
-    new_fn(data).map_err(|e| anyhow::anyhow!("Error parsing: {}: {}", type_name::<T>(), e))
-}
 
 pub fn get_current_and_max_hp(stat_pair: &Vec<StatPair>) -> (i64, i64) {
     let mut hp: Option<i64> = None;
@@ -142,9 +118,10 @@ pub fn get_current_and_max_hp(stat_pair: &Vec<StatPair>) -> (i64, i64) {
 }
 
 pub fn send_to_ui<EE: EventEmitter>(
+    now: DateTime<Utc>,
     state: &mut EncounterState,
     event_emitter: Arc<EE>,
-    options: &StartOptions) -> Instant {
+    options: &StartOptions) {
     
     let boss_dead = state.boss_dead_update;
     
@@ -171,7 +148,7 @@ pub fn send_to_ui<EE: EventEmitter>(
 
     entities.retain(|_, entity| entity.is_valid());
     let damage_valid = state.damage_is_valid;
-    let party_info = get_party_info(state, options);
+    let party_info = get_party_info(now, state, options);
 
     if !encounter.entities.is_empty() {
         // tokio::task::spawn(async move {          
@@ -183,7 +160,7 @@ pub fn send_to_ui<EE: EventEmitter>(
 
         if !damage_valid {
             event_emitter
-                .emit("invalid-damage", "")
+                .emit("invalid-damage", ())
                 .expect("failed to emit invalid-damage");
         }
 
@@ -194,23 +171,22 @@ pub fn send_to_ui<EE: EventEmitter>(
         }
     }
    
-    Instant::now()
 }
 
-fn get_party_info(state: &mut EncounterState, options: &StartOptions) -> Option<HashMap<i32, Vec<String>>>  {
-    let can_get_party_info = state.last_party_update.elapsed() >= options.party_duration && !state.party_freeze;
+fn get_party_info(now: DateTime<Utc>, state: &mut EncounterState, options: &StartOptions) -> Option<HashMap<i32, Vec<String>>>  {
+    let can_get_party_info = (now - state.last_party_update) >= options.party_duration && !state.party_freeze;
 
     if !can_get_party_info {
         return None;
     }
 
-    state.last_party_update = Instant::now();
+    state.last_party_update = now;
     // we used cached party if it exists
     if state.party_cache.is_some() {
         return Some(state.party_map_cache.clone())
     }
 
-    let party = state.get_party_from_tracker();
+    let party = state.get_party();
     if party.len() > 1 {
         let current_party: HashMap<i32, Vec<String>> = party
             .iter()
@@ -227,4 +203,113 @@ fn get_party_info(state: &mut EncounterState, options: &StartOptions) -> Option<
     }
 
     return None
+}
+
+pub fn truncate_gear_level(gear_level: f32) -> f32 {
+    f32::trunc(gear_level * 100.) / 100.
+}
+
+pub fn get_status_effect_value(value: &Option<Vec<u8>>) -> u64 {
+    value.as_ref().map_or(0, |v| {
+        let c1 = v
+            .get(0..8)
+            .map_or(0, |bytes| u64::from_le_bytes(bytes.try_into().unwrap()));
+        let c2 = v
+            .get(8..16)
+            .map_or(0, |bytes| u64::from_le_bytes(bytes.try_into().unwrap()));
+        c1.min(c2)
+    })
+}
+
+pub fn build_status_effect(
+    se_data: StatusEffectData,
+    target_id: u64,
+    source_id: u64,
+    target_type: StatusEffectTargetType,
+    timestamp: DateTime<Utc>,
+    source_entity: Option<&EncounterEntity>,
+) -> StatusEffectDetails {
+    let value = get_status_effect_value(&se_data.value);
+    let mut status_effect_category = StatusEffectCategory::Other;
+    let mut buff_category = StatusEffectBuffCategory::Other;
+    let mut show_type = StatusEffectShowType::Other;
+    let mut status_effect_type = StatusEffectType::Other;
+    let mut name = "Unknown".to_string();
+    let mut db_target_type = "".to_string();
+    let mut custom_id = 0;
+
+    if let Some(effect) = SKILL_BUFF_DATA.get(&se_data.status_effect_id) {
+        name = effect.name.clone().unwrap_or_default();
+        if effect.category.as_str() == "debuff" {
+            status_effect_category = StatusEffectCategory::Debuff
+        }
+        buff_category = effect.buff_category.clone().unwrap_or_default().as_str().into();
+        if effect.icon_show_type.clone().unwrap_or_default() == "all" {
+            show_type = StatusEffectShowType::All
+        }
+        status_effect_type = effect.buff_type.as_str().into();
+        db_target_type = effect.target.to_string();
+
+        if let Some(source_skills) = effect.source_skills.as_ref() {
+            if source_skills.len() > 1 {
+                if let Some(source_entity) = source_entity {
+                    let mut last_time = i64::MIN;
+                    let mut last_skill = 0_u32;
+                    for source_skill in source_skills {
+                        if let Some(skill) = source_entity.skills.get(source_skill) {
+                            // hard code check for stigma brand tripod
+                            // maybe set up a map of tripods for other skills in future idk??
+                            if skill.id == BardSkills::Stigma as u32 {
+                                if let Some(tripods) = skill.tripod_index {
+                                    if tripods.second != 2 {
+                                        continue;
+                                    }
+                                } else {
+                                    continue;
+                                }
+                            }
+                            if skill.last_timestamp > last_time {
+                                last_skill = *source_skill;
+                                last_time = skill.last_timestamp;
+                            }
+                        }
+                    }
+
+                    if last_skill > 0 {
+                        custom_id = get_new_id(last_skill);
+                    }
+                }
+            }
+        }
+    }
+
+    let expiry = if se_data.total_time > 0. && se_data.total_time < 604800. {
+        Some(
+            timestamp
+                + Duration::milliseconds((se_data.total_time as i64) * 1000 + TIMEOUT_DELAY_MS),
+        )
+    } else {
+        None
+    };
+
+    StatusEffectDetails {
+        instance_id: se_data.status_effect_instance_id,
+        source_id,
+        target_id,
+        status_effect_id: se_data.status_effect_id,
+        custom_id,
+        target_type,
+        db_target_type,
+        value,
+        stack_count: se_data.stack_count,
+        buff_category,
+        category: status_effect_category,
+        status_effect_type,
+        show_type,
+        expiration_delay: se_data.total_time,
+        expire_at: expiry,
+        end_tick: se_data.end_tick,
+        name,
+        timestamp,
+    }
 }

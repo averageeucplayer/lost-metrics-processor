@@ -14,6 +14,7 @@ impl EncounterState {
 
     pub fn on_init_env<EE : EventEmitter, ES: EncounterService, SA: StatsApi>(
         &mut self,
+        version: &str,
         client_id: Option<Uuid>,
         entity: Entity,
         stats_api: Arc<Mutex<SA>>,
@@ -22,6 +23,7 @@ impl EncounterState {
         // if not already saved to db, we save again
         if !self.saved && !self.encounter.current_boss_name.is_empty() {
             self.save_to_db(
+                version,
                 client_id,
                 stats_api,
                 false,

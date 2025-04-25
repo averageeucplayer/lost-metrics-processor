@@ -2,7 +2,6 @@ use crate::live::abstractions::{EventEmitter, LocalPlayerStore, RegionStore};
 use crate::live::encounter_state::EncounterState;
 use crate::live::flags::Flags;
 use crate::live::stats_api::StatsApi;
-use crate::live::utils::parse_pkt1;
 use anyhow::Ok;
 use hashbrown::HashMap;
 use log::*;
@@ -23,13 +22,16 @@ where
     ES: EncounterService {
     pub fn on_party_status_effect_result(&self, data: &[u8], state: &mut EncounterState) -> anyhow::Result<()> {
 
-        let packet = parse_pkt1(&data, PKTPartyStatusEffectResultNotify::new)?;
+        let PKTPartyStatusEffectResultNotify {
+            character_id,
+            party_instance_id,
+            raid_instance_id
+        } = PKTPartyStatusEffectResultNotify::new(&data)?;
 
-          // info!("{:?}", pkt);
-        self.trackers.borrow().party_tracker.borrow_mut().add(
-            packet.raid_instance_id,
-            packet.party_instance_id,
-            packet.character_id,
+        state.add_party_mapping(
+            raid_instance_id,
+            party_instance_id,
+            character_id,
             0,
             None,
         );
@@ -43,27 +45,19 @@ mod tests {
     use lost_metrics_sniffer_stub::packets::opcodes::Pkt;
     use tokio::runtime::Handle;
     use crate::live::{packet_handler::*, test_utils::create_start_options};
-    use crate::live::packet_handler::test_utils::PacketHandlerBuilder;
+    use crate::live::packet_handler::test_utils::{PacketBuilder, PacketHandlerBuilder, StateBuilder};
 
     #[tokio::test]
     async fn should_map_entity_to_party() {
         let options = create_start_options();
         let mut packet_handler_builder = PacketHandlerBuilder::new();
-        
-        let rt = Handle::current();
+        let mut state_builder = StateBuilder::new();
 
-        let opcode = Pkt::PartyStatusEffectResultNotify;
-        let data = PKTPartyStatusEffectResultNotify {
-            character_id: 1,
-            party_instance_id: 1,
-            raid_instance_id: 1
-        };
-        let data = data.encode().unwrap();
+        let (opcode, data) = PacketBuilder::party_status_effect_result(1, 1, 1);
 
-        let entity_name = "test".to_string();
-        packet_handler_builder.create_player_with_character_id(1, 1, entity_name.clone());
+        let mut state = state_builder.build();
         
-        let (mut state, mut packet_handler) = packet_handler_builder.build();
-        packet_handler.handle(opcode, &data, &mut state, &options, rt).unwrap();
+        let mut packet_handler = packet_handler_builder.build();
+        packet_handler.handle(opcode, &data, &mut state, &options).unwrap();
     }
 }
