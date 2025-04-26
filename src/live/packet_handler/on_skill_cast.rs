@@ -33,7 +33,7 @@ where
         let mut entity = state.get_source_entity(source_id).clone();
         entity.guess_is_player(skill_id);
 
-        if entity.class_id == Class::Arcanist as u32 {
+        if entity.class_id == Class::Arcanist {
             state.on_skill_start(
                 &entity,
                 skill_id,

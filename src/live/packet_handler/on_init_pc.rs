@@ -26,71 +26,28 @@ where
     ES: EncounterService {
     pub fn on_init_pc(&self, now: DateTime<Utc>, data: &[u8], state: &mut EncounterState) -> anyhow::Result<()> {
 
-        let packet = PKTInitPC::new(&data)?;
+        let PKTInitPC {
+            character_id,
+            class_id,
+            player_id,
+            name,
+            gear_level,
+            stat_pairs,
+            status_effect_datas
+        } = PKTInitPC::new(&data)?;
 
-        let (hp, max_hp) = get_current_and_max_hp(&packet.stat_pairs);
-        let player_id = packet.player_id;
+        let entity = state.on_init_pc(
+            now,
+            player_id,
+            class_id,
+            character_id,
+            name.clone(),
+            gear_level,
+            stat_pairs,
+            status_effect_datas
+        );
 
-        let entity = {
-            let player = Entity {
-                id: player_id,
-                is_local_player: true,
-                entity_type: EntityType::Player,
-                name: packet.name,
-                class_id: packet.class_id as u32,
-                gear_level: truncate_gear_level(packet.gear_level),
-                character_id: packet.character_id,
-                stats: packet
-                    .stat_pairs
-                    .iter()
-                    .map(|sp| (sp.stat_type, sp.value))
-                    .collect(),
-                ..Default::default()
-            };
-    
-            state.local_entity_id = player.id;
-            state.local_character_id = player.character_id;
-            state.entities.clear();
-            state.entities.insert(player.id, player.clone());
-
-            let character_id = player.character_id;
-            state.character_id_to_entity_id.insert(character_id, player_id);
-            state.entity_id_to_character_id.insert(player_id, character_id);
-
-
-           state.local_player_name = Some(player.name.clone());
-           state.complete_entry(character_id, player_id);
-        // self.party_tracker
-            //     .borrow_mut()
-            //     .complete_entry(player.character_id, player_id);
-            // self.status_tracker
-            //     .borrow_mut()
-            //     .remove_local_object(player.id);
-            state.local_status_effect_registry.remove(&player_id);
-            // state.build_and_register_status_effects(packet.status_effect_datas, player_id);
-
-            for sed in packet.status_effect_datas.into_iter() {
-                // state.build_and_register_status_effect(&sed, player_id, now, None);
-
-                let status_effect = build_status_effect(
-                    sed.clone(),
-                    player_id,
-                    sed.source_id,
-                    StatusEffectTargetType::Local,
-                    now,
-                    None,
-                );
-        
-                state.register_status_effect(status_effect.clone());
-            }
-            player
-        };
-
-        info!("{entity}");
-
-        self.local_player_store.write().unwrap().write(entity.name.clone(), entity.character_id)?;
-
-        state.on_init_pc(entity, hp, max_hp);
+        self.local_player_store.write().unwrap().write(name, character_id)?;
 
         Ok(())
     }

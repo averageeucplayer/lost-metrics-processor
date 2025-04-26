@@ -15,7 +15,7 @@ use std::any::type_name;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::constants::TIMEOUT_DELAY_MS;
+use crate::constants::{SEVEN_DAYS_SECONDS, TIMEOUT_DELAY_MS};
 
 use super::abstractions::EventEmitter;
 use super::encounter_state::EncounterState;
@@ -27,8 +27,8 @@ pub fn encounter_entity_from_entity(entity: &Entity) -> EncounterEntity {
         name: entity.name.clone(),
         entity_type: entity.entity_type,
         npc_id: entity.npc_id,
-        class_id: entity.class_id,
-        class: get_class_from_id(&entity.class_id),
+        class_id: entity.class_id as u32,
+        class: entity.class_id.as_ref().to_string(),
         gear_score: entity.gear_level,
         ..Default::default()
     };
@@ -57,15 +57,6 @@ pub fn get_skill(skill_id: &u32) -> Option<SkillData> {
     SKILL_DATA.get(skill_id).cloned()
 }
 
-pub fn map_status_effect(se: &StatusEffectDetails, custom_id_map: &mut HashMap<u32, u32>) -> u32 {
-    if se.custom_id > 0 {
-        custom_id_map.insert(se.custom_id, se.status_effect_id);
-        se.custom_id
-    } else {
-        se.status_effect_id
-    }
-}
-
 pub fn get_new_id(source_skill: u32) -> u32 {
     source_skill + 1_000_000_000
 }
@@ -74,32 +65,7 @@ pub fn get_skill_id(new_skill: u32) -> u32 {
     new_skill - 1_000_000_000
 }
 
-pub fn on_shield_change(
-    state: &mut EncounterState,
-    status_effect: StatusEffectDetails,
-    change: u64,
-) {
-    if change == 0 {
-        return;
-    }
-
-    let target_id = if status_effect.target_type == StatusEffectTargetType::Party {
-        state.character_id_to_entity_id.get(&status_effect.target_id).cloned().unwrap_or_default()
-    } else {
-        status_effect.target_id
-    };
-    
-    let target = state.get_source_entity(target_id).clone();
-    let source = state.get_source_entity(status_effect.source_id).clone();
-
-    
-
-    state.on_boss_shield(&target, status_effect.value);
-    // state.on_shield_used(&source, &target, status_effect.status_effect_id, change);
-}
-
-
-pub fn get_current_and_max_hp(stat_pair: &Vec<StatPair>) -> (i64, i64) {
+pub fn get_current_and_max_hp(stat_pair: &[StatPair]) -> (i64, i64) {
     let mut hp: Option<i64> = None;
     let mut max_hp: Option<i64> = None;
 
@@ -205,10 +171,58 @@ fn get_party_info(now: DateTime<Utc>, state: &mut EncounterState, options: &Star
     return None
 }
 
+/// Truncates a gear level to two decimal places without rounding.
+///
+/// This function multiplies the input by `100`, truncates the result
+/// towards zero (drops extra decimals), and then divides back by `100`,
+/// effectively keeping only two decimal places.
+///
+/// Useful for formatting or displaying gear levels where exact truncation is required.
+///
+/// # Arguments
+///
+/// * `gear_level` - The original gear level as a `f32`.
+///
+/// # Returns
+///
+/// * A `f32` with at most two decimal places, truncated (not rounded).
+///
+/// # Example
+///
+/// ```rust
+/// let level = truncate_gear_level(1415.278);
+/// assert_eq!(level, 1415.27);
+/// ```
 pub fn truncate_gear_level(gear_level: f32) -> f32 {
     f32::trunc(gear_level * 100.) / 100.
 }
 
+/// Extracts a `u64` value from an optional byte buffer representing a status effect value.
+///
+/// This function reads two 8-byte chunks (if available) from the provided byte buffer.
+/// It then returns the **minimum** of the two interpreted `u64` values.
+/// If the buffer is `None`, or fewer than 8/16 bytes are available, it defaults missing reads to `0`.
+///
+/// # Arguments
+///
+/// * `value` - An optional `Vec<u8>` slice containing raw bytes.
+///
+/// # Returns
+///
+/// * A `u64` value extracted from the bytes, or `0` if unavailable.
+///
+/// # Example
+///
+/// ```rust
+/// let value_bytes = Some(vec![1, 0, 0, 0, 0, 0, 0, 0,   // 1 as u64
+///                              5, 0, 0, 0, 0, 0, 0, 0]); // 5 as u64
+///
+/// let value = get_status_effect_value(&value_bytes);
+/// assert_eq!(value, 1);
+///
+/// let none_value: Option<Vec<u8>> = None;
+/// assert_eq!(get_status_effect_value(&none_value), 0);
+/// ```
 pub fn get_status_effect_value(value: &Option<Vec<u8>>) -> u64 {
     value.as_ref().map_or(0, |v| {
         let c1 = v
@@ -227,7 +241,6 @@ pub fn build_status_effect(
     source_id: u64,
     target_type: StatusEffectTargetType,
     timestamp: DateTime<Utc>,
-    source_entity: Option<&EncounterEntity>,
 ) -> StatusEffectDetails {
     let value = get_status_effect_value(&se_data.value);
     let mut status_effect_category = StatusEffectCategory::Other;
@@ -236,7 +249,8 @@ pub fn build_status_effect(
     let mut status_effect_type = StatusEffectType::Other;
     let mut name = "Unknown".to_string();
     let mut db_target_type = "".to_string();
-    let mut custom_id = 0;
+    let mut source_skills = vec![];
+    let custom_id = 0;
 
     if let Some(effect) = SKILL_BUFF_DATA.get(&se_data.status_effect_id) {
         name = effect.name.clone().unwrap_or_default();
@@ -250,47 +264,13 @@ pub fn build_status_effect(
         status_effect_type = effect.buff_type.as_str().into();
         db_target_type = effect.target.to_string();
 
-        if let Some(source_skills) = effect.source_skills.as_ref() {
-            if source_skills.len() > 1 {
-                if let Some(source_entity) = source_entity {
-                    let mut last_time = i64::MIN;
-                    let mut last_skill = 0_u32;
-                    for source_skill in source_skills {
-                        if let Some(skill) = source_entity.skills.get(source_skill) {
-                            // hard code check for stigma brand tripod
-                            // maybe set up a map of tripods for other skills in future idk??
-                            if skill.id == BardSkills::Stigma as u32 {
-                                if let Some(tripods) = skill.tripod_index {
-                                    if tripods.second != 2 {
-                                        continue;
-                                    }
-                                } else {
-                                    continue;
-                                }
-                            }
-                            if skill.last_timestamp > last_time {
-                                last_skill = *source_skill;
-                                last_time = skill.last_timestamp;
-                            }
-                        }
-                    }
-
-                    if last_skill > 0 {
-                        custom_id = get_new_id(last_skill);
-                    }
-                }
-            }
-        }
+        source_skills = effect.source_skills.clone().unwrap_or_default();
     }
 
-    let expiry = if se_data.total_time > 0. && se_data.total_time < 604800. {
-        Some(
-            timestamp
-                + Duration::milliseconds((se_data.total_time as i64) * 1000 + TIMEOUT_DELAY_MS),
-        )
-    } else {
-        None
-    };
+    let expiry = (se_data.total_time > 0. && se_data.total_time < SEVEN_DAYS_SECONDS).then(|| {
+        timestamp
+            + Duration::milliseconds((se_data.total_time as i64) * 1000 + TIMEOUT_DELAY_MS)
+    });
 
     StatusEffectDetails {
         instance_id: se_data.status_effect_instance_id,
@@ -298,6 +278,7 @@ pub fn build_status_effect(
         target_id,
         status_effect_id: se_data.status_effect_id,
         custom_id,
+        source_skills,
         target_type,
         db_target_type,
         value,
@@ -312,4 +293,34 @@ pub fn build_status_effect(
         name,
         timestamp,
     }
+}
+
+pub fn select_most_recent_valid_skill(
+    source_skills: &[u32],
+    entity_skills: &HashMap<u32, Skill>,
+) -> u32 {
+    let mut last_time = i64::MIN;
+    let mut last_skill = None;
+
+    for source_skill_id in source_skills {
+        if let Some(skill) = entity_skills.get(source_skill_id) {
+
+            if skill.id == BardSkills::Stigma as u32 {
+                if let Some(tripods) = skill.tripod_index {
+                    if tripods.second != 2 {
+                        continue;
+                    }
+                } else {
+                    continue;
+                }
+            }
+
+            if skill.last_timestamp > last_time {
+                last_time = skill.last_timestamp;
+                last_skill = Some(*source_skill_id);
+            }
+        }
+    }
+
+    last_skill.unwrap_or_default()
 }

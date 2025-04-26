@@ -56,11 +56,12 @@ mod tests {
 
         let (opcode, data) = PacketBuilder::raid_boss_kill();
 
+        let player_template = PLAYER_TEMPLATE_BERSERKER;
         state_builder.set_fight_start();
-        state_builder.create_player(&PLAYER_TEMPLATE_BERSERKER);
+        state_builder.create_player(&player_template);
         state_builder.create_npc(&NPC_TEMPLATE_THAEMINE_THE_LIGHTQUELLER);
         state_builder.zero_boss_hp();
-        state_builder.set_damage_stats(1000);
+        state_builder.set_damage_stats(player_template.id, 1000);
 
         let mut state = state_builder.build();
         

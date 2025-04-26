@@ -32,19 +32,21 @@ impl EncounterState {
         }
 
         // replace or insert local player
+        let entity_name = entity.name.clone();
         if let Some(mut local_player) = self.encounter.entities.remove(&self.encounter.local_player)
         {
             local_player.update(&entity);
-            local_player.class = get_class_from_id(&entity.class_id);
+            local_player.class = entity.class_id.as_ref().to_string();
 
             self.encounter
                 .entities
-                .insert(entity.name.clone(), local_player);
+                .insert(entity_name.clone(), local_player);
         } else {
-            let entity = encounter_entity_from_entity(&entity);
-            self.encounter.entities.insert(entity.name.clone(), entity);
+            let encounter_entity: EncounterEntity = entity.into();
+            self.encounter.entities.insert(entity_name.clone(), encounter_entity);
         }
-        self.encounter.local_player = entity.name;
+
+        self.encounter.local_player = entity_name;
 
         // remove unrelated entities
         self.encounter.entities.retain(|_, e| {

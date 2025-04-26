@@ -1,6 +1,7 @@
 use chrono::Duration;
 
 pub const DB_VERSION: i32 = 5;
+pub const SEVEN_DAYS_SECONDS: f32 = 604800.; 
 pub const TIMEOUT_DELAY_MS: i64 = 1000;
 pub const WORKSHOP_BUFF_ID: u32 = 9701;
 pub const WINDOW_MS: i64 = 5_000;

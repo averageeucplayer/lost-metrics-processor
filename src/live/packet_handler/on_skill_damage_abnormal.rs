@@ -9,7 +9,7 @@ use anyhow::Ok;
 use chrono::{DateTime, Utc};
 use hashbrown::HashMap;
 use log::*;
-use lost_metrics_core::models::DamageData;
+use lost_metrics_core::models::DamageEvent;
 use lost_metrics_sniffer_stub::decryption::DamageEncryptionHandlerTrait;
 use lost_metrics_sniffer_stub::packets::definitions::*;
 use lost_metrics_store::encounter_service::EncounterService;
@@ -32,58 +32,29 @@ where
             return Ok(());
         }
 
-        let packet = PKTSkillDamageAbnormalMoveNotify::new(&data)?;
+        let PKTSkillDamageAbnormalMoveNotify {
+            skill_damage_abnormal_move_events: mut events,
+            skill_effect_id,
+            skill_id,
+            source_id
+        } = PKTSkillDamageAbnormalMoveNotify::new(&data)?;
 
-        let now = now.timestamp_millis();
-        let local_character_id = state.entity_id_to_character_id
-            .get(&state.local_entity_id)
-            .copied()
-            .unwrap_or_default();
-        let owner = state.get_source_entity(packet.source_id).clone();
-        
-     
-        let events = packet.skill_damage_abnormal_move_events;
-        let target_count = events.len() as i32;
-        let mut damage_is_valid = true;
+        let mut valid_events = vec![true; events.len()];
+        let now_milliseconds = now.timestamp_millis();
 
-        for mut event in events.into_iter() {
-            let skill_damage_event = &mut event.skill_damage_event;
-
-            if !self.damage_encryption_handler.decrypt_damage_event(skill_damage_event) {
-                damage_is_valid = false;
-                continue;
+        for (event, valid) in events.iter_mut().zip(valid_events.iter_mut()) {
+            if !self.damage_encryption_handler.decrypt_damage_event(&mut event.skill_damage_event) {
+                *valid = false;
             }
-            
-            let target_entity = state.get_or_create_entity(skill_damage_event.target_id).clone();
-            let source_entity = state.get_or_create_entity(packet.source_id).clone();
 
-            // track potential knockdown
-            state.on_abnormal_move(&target_entity, &event.skill_move_option_data, now);
-
-            let (se_on_source, se_on_target) = state.get_status_effects(&owner, &target_entity, local_character_id);
-            let damage_data = DamageData {
-                skill_id: packet.skill_id,
-                skill_effect_id: packet.skill_effect_id,
-                damage: skill_damage_event.damage,
-                modifier: skill_damage_event.modifier as i32,
-                target_current_hp: skill_damage_event.cur_hp,
-                target_max_hp: skill_damage_event.max_hp,
-                damage_attribute: skill_damage_event.damage_attr,
-                damage_type: skill_damage_event.damage_type,
-            };
-
-            state.on_damage(
-                &owner,
-                &source_entity,
-                &target_entity,
-                damage_data,
-                se_on_source,
-                se_on_target,
-                target_count,
-                now,
-                self.event_emitter.clone()
-            );
+            let target_entity = state.get_or_create_entity(event.skill_damage_event.target_id).clone();
+            state.on_abnormal_move(&target_entity, &event.skill_move_option_data, now_milliseconds);
         }
+
+        let events: Vec<_> = events.into_iter().map(|pr| pr.skill_damage_event).collect();
+
+        state.on_damage_agg(now, source_id, valid_events, events, skill_id, Some(skill_effect_id));
+
 
         Ok(())
     }
@@ -111,23 +82,25 @@ mod tests {
         let player_template = PLAYER_TEMPLATE_SOULEATER;
         let npc_template = NPC_TEMPLATE_THAEMINE_THE_LIGHTQUELLER;
 
+        let max_hp = 100000;
+        let damage = 10000;
         let (opcode, data) = PacketBuilder::skill_damage_abnormal(
             player_template.id,
             npc_template.object_id,
             SouleaterSkills::LethalSpinning as u32,
-            10000,
+            damage,
             HitOption::FlankAttack,
-            HitFlag::Normal
+            HitFlag::Normal,
+            max_hp - damage,
+            max_hp,
+            Some(1.0),
+            Some(1.0),
+            Some(1.0)
         );
         
         state_builder.create_player(&player_template);
         state_builder.create_npc(&npc_template);
         let mut state = state_builder.build();
-
-        // let entity_name = "Assun".to_string();
-        // let boss_name = "Thaemine the Lightqueller";
-        // packet_handler_builder.create_player(1, entity_name.clone());
-        // packet_handler_builder.create_npc_with_hp(2, boss_name, 1e10 as i64);
         
         let mut packet_handler = packet_handler_builder.build();
 

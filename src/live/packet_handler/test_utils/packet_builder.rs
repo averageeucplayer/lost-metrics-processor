@@ -36,13 +36,13 @@ impl PacketBuilder {
     pub fn local_player(template: &PlayerTemplate) -> (Pkt, Vec<u8>) {
         let opcode = Pkt::InitPC;
         let data = PKTInitPC {
-            player_id: 1,
-            name: "test".into(),
-            character_id: 1,
-            class_id: 1,
-            gear_level: 1700.0,
-            stat_pairs: vec![],
-            status_effect_datas: vec![],
+            player_id: template.id,
+            name: template.name.to_string(),
+            character_id: template.character_id,
+            class_id: template.class_id,
+            gear_level: template.gear_level,
+            stat_pairs: template.stat_pairs.to_vec(),
+            status_effect_datas: template.status_effect_datas.to_vec(),
             
         };
         let data = data.encode().unwrap();
@@ -121,7 +121,12 @@ impl PacketBuilder {
         skill_id: u32,
         damage: i64,
         hit_option: HitOption,
-        hit_flag: HitFlag
+        hit_flag: HitFlag,
+        cur_hp: i64,
+        max_hp: i64,
+        down_time: Option<f32>,
+        stand_up_time: Option<f32>,
+        move_time: Option<f32>
     ) -> (Pkt, Vec<u8>) {
         let opcode = Pkt::SkillDamageAbnormalMoveNotify;
         let data = PKTSkillDamageAbnormalMoveNotify {
@@ -132,15 +137,15 @@ impl PacketBuilder {
                         target_id,
                         damage,
                         modifier: to_modifier(hit_option, hit_flag),
-                        cur_hp: 0 as i64,
-                        max_hp: 3e9 as i64,
+                        cur_hp,
+                        max_hp,
                         damage_attr: None,
                         damage_type: 0
                     },
                     skill_move_option_data: SkillMoveOptionData {
-                        down_time: None,
-                        stand_up_time: None,
-                        move_time: None
+                        down_time,
+                        stand_up_time,
+                        move_time,
                     }
                 }
             ],
@@ -158,18 +163,20 @@ impl PacketBuilder {
         skill_id: u32,
         damage: i64,
         hit_option: HitOption,
-        hit_flag: HitFlag
+        hit_flag: HitFlag,
+        cur_hp: i64,
+        max_hp: i64,
     ) -> (Pkt, Vec<u8>) {
         let opcode = Pkt::SkillDamageNotify;
         let data = PKTSkillDamageNotify {
-            source_id: 1,
+            source_id,
             skill_damage_events: vec![
                 SkillDamageEvent { 
                     target_id,
                     damage,
                     modifier: to_modifier(hit_option, hit_flag),
-                    cur_hp: 0 as i64,
-                    max_hp: 3e9 as i64,
+                    cur_hp,
+                    max_hp,
                     damage_attr: None,
                     damage_type: 0
                 }
@@ -329,18 +336,18 @@ impl PacketBuilder {
         (opcode, data)
     }
 
-    pub fn status_effect_add(object_id: u64, status_effect_id: u32, total_time: f32) -> (Pkt, Vec<u8>) {
+    pub fn status_effect_add(object_id: u64, template: StatusEffectTemplate) -> (Pkt, Vec<u8>) {
         let opcode = Pkt::StatusEffectAddNotify;
         let data = PKTStatusEffectAddNotify {
             object_id,
             status_effect_data: StatusEffectData {
-                source_id: 1,
-                status_effect_id,
-                status_effect_instance_id: 1,
-                value: Some(vec![]),
-                total_time,
-                stack_count: 0,
-                end_tick: 0
+                source_id: template.source_id,
+                status_effect_id: template.status_effect_id,
+                status_effect_instance_id: template.status_effect_instance_id,
+                value: template.value,
+                total_time: template.total_time,
+                stack_count: template.stack_count,
+                end_tick: template.end_tick
             }
         };
         let data = data.encode().unwrap();
@@ -367,12 +374,12 @@ impl PacketBuilder {
         (opcode, data)
     }
 
-    pub fn party_status_effect_remove(template: StatusEffectTemplate) -> (Pkt, Vec<u8>) {
+    pub fn party_status_effect_remove(character_id: u64, instance_ids: Vec<u32>, reason: u8) -> (Pkt, Vec<u8>) {
         let opcode = Pkt::PartyStatusEffectRemoveNotify;
         let data = PKTPartyStatusEffectRemoveNotify {
-            character_id: 1,
-            status_effect_instance_ids: vec![1],
-            reason: 0
+            character_id,
+            status_effect_instance_ids: instance_ids,
+            reason
         };
         let data = data.encode().unwrap();
 
@@ -429,6 +436,7 @@ impl PacketBuilder {
         character_id: u64,
         cur_hp: i64,
         max_hp: i64,
+        template: StatusEffectTemplate
     ) -> (Pkt, Vec<u8>) {
         let opcode = Pkt::TroopMemberUpdateMinNotify;
         let data = PKTTroopMemberUpdateMinNotify {
@@ -437,13 +445,13 @@ impl PacketBuilder {
             max_hp,
             status_effect_datas: vec![
                 StatusEffectData { 
-                    source_id: todo!(),
-                    status_effect_id: todo!(),
-                    status_effect_instance_id: todo!(),
-                    value: todo!(),
-                    total_time: todo!(),
-                    stack_count: todo!(),
-                    end_tick: todo!()
+                    source_id: template.source_id,
+                    status_effect_id: template.status_effect_id,
+                    status_effect_instance_id: template.status_effect_instance_id,
+                    value: template.value,
+                    total_time: template.total_time,
+                    stack_count: template.stack_count,
+                    end_tick: template.end_tick
                 }
             ]
         };

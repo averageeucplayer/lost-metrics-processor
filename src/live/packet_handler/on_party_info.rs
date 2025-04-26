@@ -48,7 +48,7 @@ where
                 state.encounter.local_player.clone_from(&entity.name);
                 
                 local.update(&entity);
-                local.class = get_class_from_id(&entity.class_id);
+                local.class = entity.class_id.as_ref().to_string();
     
                 entities.insert(state.encounter.local_player.clone(), local);
             } else {
@@ -64,7 +64,7 @@ where
                     let mut new_local = entities[&old_local].clone();
                     
                     new_local.update(&entity);
-                    new_local.class = get_class_from_id(&entity.class_id);
+                    new_local.class = entity.class_id.as_ref().to_string();
     
                     entities.remove(&old_local);
                     state.encounter.local_player.clone_from(&entity.name);

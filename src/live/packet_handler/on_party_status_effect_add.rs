@@ -29,38 +29,7 @@ where
             status_effect_datas,
         } = PKTPartyStatusEffectAddNotify::new(&data)?;
 
-        let target_entity_id = state.character_id_to_entity_id.get(&character_id).copied().unwrap_or_default();
-        let shields = state.party_status_effect_add(now, character_id, status_effect_datas);
-        let current_boss_name = state.encounter.current_boss_name.clone();
-
-        for status_effect in shields {
-           
-            let target_id =
-                if status_effect.target_type == StatusEffectTargetType::Party {
-                    target_entity_id
-                } else {
-                    status_effect.target_id
-                };
-            let target_name = state.get_source_entity(target_id).name.clone();
-            
-            if target_name == current_boss_name {
-                state.encounter.entities
-                    .entry(target_name)
-                    .and_modify(|e| {
-                        e.current_shield = status_effect.value;
-                    });
-            }
-
-            let source = state.get_source_entity(status_effect.source_id).clone();
-            let target = state.get_source_entity(target_id).clone();
-
-            state.on_shield_applied(
-                &source,
-                &target,
-                status_effect.status_effect_id,
-                status_effect.value,
-            );
-        }
+        state.on_party_status_effect_add(now, character_id, status_effect_datas);
 
         Ok(())
     }

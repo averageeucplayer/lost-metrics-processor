@@ -8,8 +8,10 @@ use anyhow::Ok;
 use chrono::Utc;
 use hashbrown::HashMap;
 use log::*;
+use lost_metrics_core::models::StatusEffect;
+use lost_metrics_sniffer_stub::packets::structures::StatusEffectData;
 
-use super::{NpcTemplate, PlayerTemplate};
+use super::{NpcTemplate, PlayerTemplate, StatusEffectTemplate};
 
 pub struct StateBuilder {
     state: EncounterState
@@ -36,7 +38,7 @@ impl StateBuilder {
         // self.state.encounter.current_boss_name = boss_name.into();
     }
 
-    pub fn set_damage_stats(&mut self, value: u64) {
+    pub fn set_damage_stats(&mut self, instance_id: u64, value: u64) {
 
     }
 
@@ -48,8 +50,20 @@ impl StateBuilder {
         self.state.encounter.local_player = name;
     }
 
-    pub fn create_npc(&mut self, npc: &NpcTemplate) {
+    pub fn create_npc(&mut self, template: &NpcTemplate) {
+        let now = Utc::now();
 
+        self.state.on_new_npc(
+            false,
+            now,
+            template.object_id,
+            template.type_id,
+            0,
+            template.level,
+            template.balance_level,
+            template.stat_pairs.to_vec(),
+            template.status_effect_datas.to_vec()
+        );
     }
 
     pub fn create_player(&mut self, template: &PlayerTemplate) {
@@ -65,6 +79,26 @@ impl StateBuilder {
             template.stat_pairs.to_vec(),
             vec![],
             template.status_effect_datas.to_vec());
+    }
+
+    pub fn add_status_effect(&mut self, object_id: u64, status_effect: StatusEffectTemplate) {
+
+    }
+
+    pub fn add_party_status_effect(&mut self, object_id: u64, status_effect: StatusEffectTemplate) {
+        let now =  Utc::now();
+        let datas = vec![
+            StatusEffectData {
+                source_id: status_effect.source_id,
+                stack_count: status_effect.stack_count,
+                end_tick: status_effect.end_tick,
+                status_effect_id: status_effect.status_effect_id,
+                status_effect_instance_id: status_effect.status_effect_instance_id,
+                total_time: status_effect.total_time,
+                value: status_effect.value,
+            }
+        ];
+        self.state.on_party_status_effect_add(now, object_id, datas);
     }
 
     pub fn build(self) -> EncounterState {

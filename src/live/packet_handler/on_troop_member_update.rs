@@ -2,7 +2,7 @@ use crate::live::abstractions::{EventEmitter, LocalPlayerStore, RegionStore};
 use crate::live::encounter_state::EncounterState;
 use crate::live::flags::Flags;
 use crate::live::stats_api::StatsApi;
-use crate::live::utils::{get_status_effect_value, on_shield_change};
+use crate::live::utils::{get_status_effect_value};
 use anyhow::Ok;
 use hashbrown::HashMap;
 use log::*;
@@ -57,30 +57,26 @@ where
                             val,
                             state.local_character_id,
                         );
+
                 if let Some(status_effect) = status_effect {
                     if status_effect.status_effect_type == StatusEffectType::Shield {
                         let change = old_value
                             .checked_sub(status_effect.value)
                             .unwrap_or_default();
-                        // on_shield_change(
-                        //     &mut trackers.entity_tracker,
-                        //     &trackers.id_tracker,
-                        //     state,
-                        //     status_effect,
-                        //     change,
-                        // );
 
                         if change == 0 {
                             return Ok(());
                         }
                     
                         let target_entity_id = state.character_id_to_entity_id.get(&status_effect.target_id).copied().unwrap_or_default();
-                        let source = state.get_source_entity(status_effect.source_id).clone();
+                       
                         let target_id = if status_effect.target_type == StatusEffectTargetType::Party {
                             target_entity_id
                         } else {
                             status_effect.target_id
                         };
+
+                        let source = state.get_source_entity(status_effect.source_id).clone();
                         let target = state.get_source_entity(target_id).clone();
 
                         state.on_boss_shield(&target, status_effect.value);
@@ -99,7 +95,7 @@ mod tests {
     use lost_metrics_sniffer_stub::packets::opcodes::Pkt;
     use tokio::runtime::Handle;
     use crate::live::{packet_handler::*, test_utils::create_start_options};
-    use crate::live::packet_handler::test_utils::{PacketBuilder, PacketHandlerBuilder, StateBuilder, PLAYER_TEMPLATE_BARD};
+    use crate::live::packet_handler::test_utils::{PacketBuilder, PacketHandlerBuilder, StateBuilder, NPC_TEMPLATE_THAEMINE_THE_LIGHTQUELLER, PLAYER_TEMPLATE_BARD, STATUS_EFFECT_TEMPLATE_BARD_ATTACK_POWER_BUFF, STATUS_EFFECT_TEMPLATE_SHIELD};
 
     #[tokio::test]
     async fn should_update_entity_hp() {
@@ -111,12 +107,36 @@ mod tests {
         let (opcode, data) = PacketBuilder::troop_member_update(
             player_template.character_id,
             0,
-            10000
+            10000,
+            STATUS_EFFECT_TEMPLATE_BARD_ATTACK_POWER_BUFF
         );
         
+        state_builder.create_player(&player_template);
         let mut state = state_builder.build();
-        // let entity_name = "test".to_string();
-        // packet_handler_builder.create_player_with_character_id(1, 1, entity_name.clone());
+        
+        let mut packet_handler = packet_handler_builder.build();
+        packet_handler.handle(opcode, &data, &mut state, &options).unwrap();
+    }
+
+    #[tokio::test]
+    async fn should_update_boss_shield() {
+        let options = create_start_options();
+        let mut packet_handler_builder = PacketHandlerBuilder::new();
+        let mut state_builder = StateBuilder::new();
+
+        let npc_template = NPC_TEMPLATE_THAEMINE_THE_LIGHTQUELLER;
+        let mut status_effect = STATUS_EFFECT_TEMPLATE_SHIELD;
+        status_effect.value = Some(vec![1]);
+        let (opcode, data) = PacketBuilder::troop_member_update(
+            npc_template.object_id,
+            0,
+            10000,
+            status_effect
+        );
+        
+        state_builder.create_npc(&npc_template);
+        // state_builder.add_status_effect(status_effect);
+        let mut state = state_builder.build();
         
         let mut packet_handler = packet_handler_builder.build();
         packet_handler.handle(opcode, &data, &mut state, &options).unwrap();

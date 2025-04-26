@@ -2,7 +2,6 @@ use crate::live::abstractions::{EventEmitter, LocalPlayerStore, RegionStore};
 use crate::live::encounter_state::EncounterState;
 use crate::live::flags::Flags;
 use crate::live::stats_api::StatsApi;
-use crate::live::utils::on_shield_change;
 use anyhow::Ok;
 use hashbrown::HashMap;
 use log::*;
@@ -24,14 +23,19 @@ where
     ES: EncounterService {
     pub fn on_status_effect_sync(&self, data: &[u8], state: &mut EncounterState) -> anyhow::Result<()> {
 
-        let packet = PKTStatusEffectSyncDataNotify::new(&data)?;
+        let PKTStatusEffectSyncDataNotify {
+            character_id,
+            object_id,
+            status_effect_instance_id,
+            value
+        } = PKTStatusEffectSyncDataNotify::new(&data)?;
 
         let (status_effect, old_value) =
                 state.sync_status_effect(
-                    packet.status_effect_instance_id,
-                    packet.character_id,
-                    packet.object_id,
-                    packet.value,
+                    status_effect_instance_id,
+                    character_id,
+                    object_id,
+                    value,
                     state.local_character_id,
                 );
             if let Some(status_effect) = status_effect {
@@ -39,28 +43,21 @@ where
                     let change = old_value
                         .checked_sub(status_effect.value)
                         .unwrap_or_default();
-                    // on_shield_change(
-                    //     &mut trackers.entity_tracker,
-                    //     &trackers.id_tracker,
-                    //     state,
-                    //     status_effect,
-                    //     change,
-                    // );
 
                     if change == 0 {
                         return Ok(());
                     }
                 
                     let target_entity_id = state.character_id_to_entity_id.get(&status_effect.target_id).copied().unwrap_or_default();
-                    let source = state.get_source_entity(status_effect.source_id);
                     let target_id = if status_effect.target_type == StatusEffectTargetType::Party {
                         target_entity_id
                     } else {
                         status_effect.target_id
                     };
-                    let target = state.get_source_entity(target_id);
-                    // state.on_boss_shield(&target, status_effect.value);
-                    // state.on_shield_used(&source, &target, status_effect.status_effect_id, change);
+                    let source = state.get_source_entity(status_effect.source_id).clone();
+                    let target = state.get_source_entity(target_id).clone();
+                    state.on_boss_shield(&target, status_effect.value);
+                    state.on_shield_used(&source, &target, status_effect.status_effect_id, change);
                 }
             }
 

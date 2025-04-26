@@ -84,60 +84,6 @@ impl PacketHandlerBuilder {
             .returning(|_, _| Ok(()));
     }
 
-    // pub fn set_local_player_id(&mut self, id: u64) {
-    //     self.state.local_entity_id = id;
-    // }
-
-    // pub fn add_party_status_effect(&mut self, character_id: u64, instance_id: u32, buff_id: u32) {
-    //     let packet = PKTPartyStatusEffectAddNotify {
-    //         character_id,
-    //         status_effect_datas: vec![StatusEffectData {
-    //             source_id: 1,
-    //             status_effect_id: buff_id,
-    //             status_effect_instance_id: instance_id,
-    //             value: Some(vec![]),
-    //             total_time: 10.0,
-    //             stack_count: 1,
-    //             end_tick: 1
-    //         }]
-    //     };
-    //     state.party_status_effect_add(packet, &self.state.encounter.entities);
-    // }
-
-    // pub fn create_player_with_character_id(&mut self, player_id: u64, character_id: u64, name: String) {
-    //     let playable_character = create_pc(player_id, 101, character_id, name);
-    //     let entity = state.new_pc(playable_character);
-    //     self.state.on_new_pc(entity, 100000, 100000);
-    // }
-
-    // pub fn create_unknown(&mut self, object_id: u64) {
-    //     let entity = Entity {
-    //         id: object_id,
-    //         entity_type: EntityType::Unknown,
-    //         name: format!("{:x}", object_id),
-    //         ..Default::default()
-    //     };
-    //     state.entities.insert(entity.id, entity.clone());
-    // }
-
-    // pub fn create_player(&mut self, player_id: u64, name: String) {
-    //     let playable_character = create_pc(player_id, 101, 1, name);
-    //     let entity = state.new_pc(playable_character);
-    //     self.state.on_new_pc(entity, 100000, 100000);
-    // }
-
-    // pub fn create_npc_with_hp(&mut self, object_id: u64, name: &str, max_hp: i64) {
-    //     let npc = create_npc(object_id, name);
-    //     let entity = state.new_npc(npc, max_hp);
-    //     self.state.on_new_npc(entity, max_hp, max_hp);
-    // }
-
-    // pub fn create_npc(&mut self, object_id: u64, name: &str) {
-    //     let npc = create_npc(object_id, name);
-    //     let entity = state.new_npc(npc, 100000);
-    //     self.state.on_new_npc(entity, 100000, 100000);
-    // }
-
     pub fn build(self) -> 
     DefaultPacketHandler<
         MockFlags,

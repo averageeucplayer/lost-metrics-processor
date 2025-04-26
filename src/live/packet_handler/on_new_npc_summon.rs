@@ -38,62 +38,18 @@ where
             },
             owner_id
         } = PKTNewNpcSummon::new(&data)?;
-            
-        let (hp, max_hp) = get_current_and_max_hp(&stat_pairs);
-        let entity = {
-            let (entity_type, name, grade) = get_npc_entity_type_name_grade(
-                object_id,
-                type_id,
-                max_hp);
-    
-            let entity_type = if entity_type == EntityType::Npc {
-                EntityType::Summon
-            } else {
-                entity_type
-            };
-            let npc = Entity {
-                id: object_id,
-                entity_type,
-                name,
-                grade,
-                npc_id: type_id,
-                owner_id: owner_id,
-                level: level,
-                balance_level: balance_level.unwrap_or(level),
-                push_immune: entity_type == EntityType::Boss,
-                stats: stat_pairs.iter()
-                    .map(|sp| (sp.stat_type, sp.value))
-                    .collect(),
-                ..Default::default()
-            };
-            state.entities.insert(npc.id, npc.clone());
-            state.local_status_effect_registry.remove(&object_id);
-            // self.status_tracker.borrow_mut().remove_local_object(npc.id);
-            // state.build_and_register_status_effects(packet.npc_struct.status_effect_datas, npc.id);
 
-            for sed in status_effect_datas.into_iter() {
-                // state.build_and_register_status_effect(&sed, object_id, timestamp, None);
-                let source_id = state.get_source_entity(sed.source_id).id;
-
-                let status_effect = build_status_effect(
-                    sed.clone(),
-                    object_id,
-                    source_id,
-                    StatusEffectTargetType::Local,
-                    now,
-                    None,
-                );
-        
-                state.register_status_effect(status_effect.clone());
-            }
-            npc
-        };
-
-        info!(
-            "new {}: {}, eid: {}, id: {}, hp: {}",
-            entity.entity_type, entity.name, entity.id, entity.npc_id, max_hp
+        state.on_new_npc(
+            true,
+            now,
+            object_id,
+            type_id,
+            owner_id,
+            level,
+            balance_level,
+            stat_pairs,
+            status_effect_datas
         );
-        state.on_new_npc(entity, hp, max_hp);
 
         Ok(())
     }

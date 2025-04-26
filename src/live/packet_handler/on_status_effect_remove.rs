@@ -1,13 +1,14 @@
+use crate::constants::WORKSHOP_BUFF_ID;
 use crate::live::abstractions::{EventEmitter, LocalPlayerStore, RegionStore};
 use crate::live::encounter_state::EncounterState;
 use crate::live::flags::Flags;
 use crate::live::stats_api::StatsApi;
 use crate::live::utils::*;
 use anyhow::Ok;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use hashbrown::HashMap;
 use log::*;
-use lost_metrics_core::models::{EntityType, StatusEffectTargetType, StatusEffectType};
+use lost_metrics_core::models::{EntityType, StatusEffectDetails, StatusEffectTargetType, StatusEffectType};
 use lost_metrics_sniffer_stub::decryption::DamageEncryptionHandlerTrait;
 use lost_metrics_sniffer_stub::packets::definitions::*;
 use lost_metrics_store::encounter_service::EncounterService;
@@ -23,21 +24,42 @@ where
     LP: LocalPlayerStore,
     EE: EventEmitter,
     ES: EncounterService {
-    pub fn on_status_effect_remove(&self, data: &[u8], state: &mut EncounterState) -> anyhow::Result<()> {
+    pub fn on_status_effect_remove(&self, now: DateTime<Utc>, data: &[u8], state: &mut EncounterState) -> anyhow::Result<()> {
 
-        let packet = PKTStatusEffectRemoveNotify::new(&data)?;
+        let PKTStatusEffectRemoveNotify {
+            character_id,
+            object_id: target_id,
+            status_effect_instance_ids: instance_ids,
+            reason
+        } = PKTStatusEffectRemoveNotify::new(&data)?;
 
-        let (is_shield, shields_broken, effects_removed, _left_workshop) =
-        state.remove_status_effects(
-            packet.object_id,
-            packet.status_effect_instance_ids,
-            packet.reason,
-            StatusEffectTargetType::Local,
-        );
-        
-        if is_shield {
+        let mut has_shield_buff = false;
+        let mut shields_broken: Vec<StatusEffectDetails> = Vec::new();
+        let mut left_workshop = false;
+        let mut effects_removed = Vec::new();
+
+        if let Some(ser) = state.local_status_effect_registry.get_mut(&target_id) {
+            for id in instance_ids {
+                if let Some(se) = ser.remove(&id) {
+                    if se.status_effect_id == WORKSHOP_BUFF_ID {
+                        left_workshop = true;
+                    }
+                    if se.status_effect_type == StatusEffectType::Shield {
+                        has_shield_buff = true;
+                        if reason == 4 {
+                            shields_broken.push(se);
+                            continue;
+                        }
+                    }
+                    effects_removed.push(se);
+                }
+            }
+        }
+
+        let target = state.get_source_entity(target_id).clone();
+
+        if has_shield_buff {
             if shields_broken.is_empty() {
-                let target = state.get_source_entity(packet.object_id).clone();
                 state.on_boss_shield(&target, 0);
             } else {
                 for status_effect in shields_broken {
@@ -57,14 +79,13 @@ where
                     }
                     
                     let source = state.get_source_entity(status_effect.source_id).clone();
-                    let target = state.get_source_entity(target_id).clone();
                     state.on_boss_shield(&target, status_effect.value);
                     state.on_shield_used(&source, &target, status_effect.status_effect_id, change);
                 }
             }
         }
         
-        let now = Utc::now().timestamp_millis();
+        let now = now.timestamp_millis();
         for effect_removed in effects_removed {
             if effect_removed.status_effect_type == StatusEffectType::HardCrowdControl {
                 let target = state.get_source_entity(effect_removed.target_id).clone();

@@ -20,12 +20,11 @@ impl EncounterState {
         }
 
         let entities = &mut self.encounter.entities;
+        let encounter_damage_stats = &mut self.encounter.encounter_damage_stats;
 
         let mut source_entity_state = entities
             .entry(source_entity.name.clone())
             .or_insert_with(|| encounter_entity_from_entity(source_entity));
-
-        let encounter_damage_stats = &mut self.encounter.encounter_damage_stats;
 
         if !encounter_damage_stats
             .applied_shield_buffs

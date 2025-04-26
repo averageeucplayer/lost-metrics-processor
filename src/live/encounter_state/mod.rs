@@ -112,9 +112,9 @@ impl EncounterState {
             character_id_to_entity_id: HashMap::new(),
             entity_id_to_character_id: HashMap::new(),
             
-            last_party_update: Utc::now(),
-            last_update: Utc::now(),
-            raid_end_cd: Utc::now(),
+            last_party_update: DateTime::<Utc>::MIN_UTC,
+            last_update: DateTime::<Utc>::MIN_UTC,
+            raid_end_cd: DateTime::<Utc>::MIN_UTC,
             client_id: None,
             party_freeze: false,
             party_cache: None,
@@ -193,7 +193,7 @@ impl EncounterState {
                         member.name
                     );
                     local_player.entity_type = EntityType::Player;
-                    local_player.class_id = member.class_id as u32;
+                    local_player.class_id = member.class_id.into();
                     local_player.gear_level = truncate_gear_level(member.gear_level);
                     local_player.name.clone_from(&member.name);
                     local_player.character_id = member.character_id;
@@ -210,7 +210,7 @@ impl EncounterState {
                 if let Some(entity) = self.entities.get_mut(&entity_id) {
                     if entity.entity_type == EntityType::Player && entity.name == member.name {
                         entity.gear_level = truncate_gear_level(member.gear_level);
-                        entity.class_id = member.class_id as u32;
+                        entity.class_id = member.class_id.into()
                     }
                 }
 
@@ -233,6 +233,48 @@ impl EncounterState {
         }
     }
 
+    pub fn on_status_effect_add(
+        &mut self,
+        now: DateTime<Utc>,
+        target_id: u64,
+        status_effect_data: StatusEffectData) {
+        let source_entity = self.get_source_entity(status_effect_data.source_id).clone();
+        let source_entity_name = source_entity.name.clone();
+        let mut status_effect = build_status_effect(
+            status_effect_data,
+            target_id,
+            source_entity.id,
+            StatusEffectTargetType::Local,
+            now,
+        );
+
+        let target = self.get_source_entity(target_id).clone();
+
+        if status_effect.status_effect_type == StatusEffectType::Shield {
+            self.on_boss_shield(&target, status_effect.value);
+            self.on_shield_applied(
+                &source_entity,
+                &target,
+                status_effect.status_effect_id,
+                status_effect.value,
+            );
+        }
+
+        let source_encounter_entity = self.encounter.entities.get(&source_entity_name);
+        if let Some(encounter_entity) = source_encounter_entity {
+            let custom_id = select_most_recent_valid_skill(&status_effect.source_skills, &encounter_entity.skills);
+            status_effect.custom_id = custom_id;
+        }
+
+        if status_effect.status_effect_type == StatusEffectType::HardCrowdControl {
+            if target.entity_type == EntityType::Player {
+                self.on_cc_applied(&target, &status_effect);
+            }
+        }
+        
+        self.register_status_effect(status_effect);
+    }
+
     pub fn should_use_party_status_effect(&self, character_id: u64, local_character_id: u64) -> bool {
         let local_player_party_id = self.character_id_to_party_id.get(&local_character_id);
         let affected_player_party_id = self.character_id_to_party_id.get(&character_id);
@@ -247,16 +289,55 @@ impl EncounterState {
         }
     }
 
-    pub fn register_status_effect(&mut self, se: StatusEffectDetails) {
-        let registry = match se.target_type {
+    pub fn register_status_effect(&mut self, status_effect: StatusEffectDetails) -> &mut StatusEffectDetails {
+        let registry = match status_effect.target_type {
             StatusEffectTargetType::Local => &mut self.local_status_effect_registry,
             StatusEffectTargetType::Party => &mut self.party_status_effect_registry,
         };
 
-        registry.entry(se.target_id).or_default();
+        let ser = registry.entry(status_effect.target_id).or_default();
+        let status_effect = ser.entry(status_effect.instance_id).or_insert_with(|| status_effect);
 
-        let ser = registry.get_mut(&se.target_id).unwrap();
-        ser.insert(se.instance_id, se);
+        status_effect
+    }
+
+    pub fn on_party_status_effect_add(
+        &mut self,
+        now: DateTime<Utc>,
+        character_id: u64,
+        status_effect_datas: Vec<StatusEffectData>) {
+        let target_entity_id = self.character_id_to_entity_id.get(&character_id).copied().unwrap_or_default();
+        let shields = self.party_status_effect_add(now, character_id, status_effect_datas);
+        let current_boss_name = self.encounter.current_boss_name.clone();
+
+        for status_effect in shields {
+           
+            let target_id =
+                if status_effect.target_type == StatusEffectTargetType::Party {
+                    target_entity_id
+                } else {
+                    status_effect.target_id
+                };
+            let target_name = self.get_source_entity(target_id).name.clone();
+            
+            if target_name == current_boss_name {
+                self.encounter.entities
+                    .entry(target_name)
+                    .and_modify(|e| {
+                        e.current_shield = status_effect.value;
+                    });
+            }
+
+            let source = self.get_source_entity(status_effect.source_id).clone();
+            let target = self.get_source_entity(target_id).clone();
+
+            self.on_shield_applied(
+                &source,
+                &target,
+                status_effect.status_effect_id,
+                status_effect.value,
+            );
+        }
     }
 
     pub fn add_party_mapping(
@@ -478,32 +559,6 @@ impl EncounterState {
         }
     }
 
-    pub fn build_and_register_status_effect(
-        &mut self,
-        sed: &StatusEffectData,
-        target_id: u64,
-        timestamp: DateTime<Utc>
-    ) -> StatusEffectDetails {
-        let (id, name) = {
-            let source_entity = self.get_source_entity(sed.source_id);
-            (source_entity.id, source_entity.name.clone())
-        };
-        let source_encounter_entity = self.encounter.entities.get(&name);
-
-
-        let status_effect = build_status_effect(
-            sed.clone(),
-            target_id,
-            id,
-            StatusEffectTargetType::Local,
-            timestamp,
-            source_encounter_entity,
-        );
-
-        self.register_status_effect(status_effect.clone());
-
-        status_effect
-    }
 
     pub fn get_or_create_encounter_entity(&mut self, instance_id: u64) -> Option<&mut EncounterEntity> {
 
@@ -532,12 +587,12 @@ impl EncounterState {
         status_effect_datas: Vec<StatusEffectData>
     ) {
         let (hp, max_hp) = get_current_and_max_hp(&stat_pairs);
-        let entity = {
+
         let entity = Entity {
             id: player_id,
             entity_type: EntityType::Player,
-            name,
-            class_id: class_id as u32,
+            name: name.clone(),
+            class_id: class_id.into(),
             gear_level: truncate_gear_level(max_item_level), // todo?
             character_id: character_id,
             stats: stat_pairs.iter()
@@ -546,7 +601,30 @@ impl EncounterState {
             ..Default::default()
         };
 
-        self.entities.insert(entity.id, entity.clone());
+        {
+            let entity = self.entities.entry(entity.id).or_insert_with(|| entity);
+
+            self.encounter
+                .entities
+                .entry(name.clone())
+                .and_modify(|player| {
+                    player.id = player_id;
+                    player.gear_score = max_item_level;
+                    player.current_hp = hp;
+                    player.max_hp = max_hp;
+                    if character_id > 0 {
+                        player.character_id = character_id;
+                    }
+                })
+                .or_insert_with(|| {
+                    let entity = entity.clone();
+                    let mut player: EncounterEntity = entity.into();
+                    player.current_hp = hp;
+                    player.max_hp = max_hp;
+                    player
+                });
+        }
+
         let old_entity_id = self.character_id_to_entity_id.get(&character_id).copied();
 
         if let Some(old_entity_id) = old_entity_id {
@@ -585,53 +663,28 @@ impl EncounterState {
 
         for sed in status_effect_datas.into_iter() {
             let source_id = sed.source_id;
-            let status_effect = build_status_effect(sed, target_id, source_id, target_type, now, None);
+            let status_effect = build_status_effect(
+                sed,
+                target_id,
+                source_id,
+                target_type,
+                now);
             self.register_status_effect(status_effect);
         }
-
-        entity
-    };
-    
-    info!(
-        "new PC: {}, {}, {}, eid: {}, cid: {}",
-        entity.name,
-        get_class_from_id(&entity.class_id),
-        entity.gear_level,
-        entity.id,
-        entity.character_id
-    );
-    info!("{entity}");
-
-    self.encounter
-        .entities
-        .entry(entity.name.clone())
-        .and_modify(|player| {
-            player.id = entity.id;
-            player.gear_score = entity.gear_level;
-            player.current_hp = hp;
-            player.max_hp = max_hp;
-            if entity.character_id > 0 {
-                player.character_id = entity.character_id;
-            }
-        })
-        .or_insert_with(|| {
-            let mut player: EncounterEntity = entity.into();
-            player.current_hp = hp;
-            player.max_hp = max_hp;
-            player
-        });
     }
 
     pub fn complete_entry(&mut self, character_id: u64, entity_id: u64) {
         let char_party_id = self.character_id_to_party_id.get(&character_id).cloned();
         let entity_party_id = self.entity_id_to_party_id.get(&entity_id).cloned();
+        
         if let (Some(_char_party_id), Some(_entity_party_id)) = (char_party_id, entity_party_id) {
             return;
         }
+
         if let Some(entity_party_id) = entity_party_id {
-            self.character_id_to_party_id
-                .insert(character_id, entity_party_id);
+            self.character_id_to_party_id.insert(character_id, entity_party_id);
         }
+
         if let Some(char_party_id) = char_party_id {
             self.entity_id_to_party_id.insert(entity_id, char_party_id);
         }
@@ -658,74 +711,15 @@ impl EncounterState {
                 entity_id,
                 StatusEffectTargetType::Party,
                 now,
-                encounter_entity,
             );
+            
             if status_effect.status_effect_type == StatusEffectType::Shield {
                 shields.push(status_effect.clone());
             }
+
             self.register_status_effect(status_effect);
         }
         shields
-    }
-
-    // pub fn register_status_effect(&mut self, se: StatusEffectDetails) {
-    //     let registry = match se.target_type {
-    //         StatusEffectTargetType::Local => &mut self.local_status_effect_registry,
-    //         StatusEffectTargetType::Party => &mut self.party_status_effect_registry,
-    //     };
-
-    //     registry.entry(se.target_id).or_insert_with(HashMap::new);
-
-    //     let ser = registry.get_mut(&se.target_id).unwrap();
-    //     ser.insert(se.instance_id, se);
-    // }
-
-    pub fn remove_status_effects(
-        &mut self,
-        target_id: u64,
-        instance_id: Vec<u32>,
-        reason: u8,
-        sett: StatusEffectTargetType,
-    ) -> (
-        bool,
-        Vec<StatusEffectDetails>,
-        Vec<StatusEffectDetails>,
-        bool,
-    ) {
-        let registry = match sett {
-            StatusEffectTargetType::Local => &mut self.local_status_effect_registry,
-            StatusEffectTargetType::Party => &mut self.party_status_effect_registry,
-        };
-
-        let mut has_shield_buff = false;
-        let mut shields_broken: Vec<StatusEffectDetails> = Vec::new();
-        let mut left_workshop = false;
-        let mut effects_removed = Vec::new();
-
-        if let Some(ser) = registry.get_mut(&target_id) {
-            for id in instance_id {
-                if let Some(se) = ser.remove(&id) {
-                    if se.status_effect_id == WORKSHOP_BUFF_ID {
-                        left_workshop = true;
-                    }
-                    if se.status_effect_type == StatusEffectType::Shield {
-                        has_shield_buff = true;
-                        if reason == 4 {
-                            shields_broken.push(se);
-                            continue;
-                        }
-                    }
-                    effects_removed.push(se);
-                }
-            }
-        }
-
-        (
-            has_shield_buff,
-            shields_broken,
-            effects_removed,
-            left_workshop,
-        )
     }
 
     pub fn get_source_entity(&mut self, id: u64) -> &mut Entity {
@@ -992,23 +986,82 @@ impl EncounterState {
     }
 
     // replace local player
-    pub fn on_init_pc(&mut self, entity: Entity, hp: i64, max_hp: i64) {
-        self.encounter.entities.remove(&self.encounter.local_player);
-        self.encounter.local_player.clone_from(&entity.name);
-        let mut player = encounter_entity_from_entity(&entity);
-        player.current_hp = hp;
-        player.max_hp = max_hp;
-        self.encounter.entities.insert(player.name.clone(), player);
+    pub fn on_init_pc(&mut self,
+        now: DateTime<Utc>,
+        player_id: u64,
+        class_id: u32,
+        character_id: u64,
+        name: String,
+        gear_level: f32,
+        stat_pairs: Vec<StatPair>,
+        status_effect_datas: Vec<StatusEffectData>) {
+        let (hp, max_hp) = get_current_and_max_hp(&stat_pairs);
+
+        let player = Entity {
+            id: player_id,
+            is_local_player: true,
+            entity_type: EntityType::Player,
+            name: name.clone(),
+            class_id: class_id.into(),
+            gear_level: truncate_gear_level(gear_level),
+            character_id: character_id,
+            stats: stat_pairs
+                .into_iter()
+                .map(|sp| (sp.stat_type, sp.value))
+                .collect(),
+            ..Default::default()
+        };
+
+        self.local_entity_id = player.id;
+        self.local_character_id = player.character_id;
+        self.character_id_to_entity_id.insert(character_id, player_id);
+        self.entity_id_to_character_id.insert(player_id, character_id);
+        self.local_player_name = Some(player.name.clone());
+        self.complete_entry(character_id, player_id);
+
+        self.local_status_effect_registry.remove(&player_id);
+
+        {
+            self.entities.clear();
+            let player = self.entities.entry(player.id).or_insert_with(|| player);
+            info!("{player}");
+
+            self.encounter.entities.remove(&self.encounter.local_player);
+            self.encounter.local_player.clone_from(&name);
+            let mut encounter_entity = encounter_entity_from_entity(&player);
+            encounter_entity.current_hp = hp;
+            encounter_entity.max_hp = max_hp;
+            self.encounter.entities.insert(name.clone(), encounter_entity);
+        }
+
+        for sed in status_effect_datas {
+            let source_id = self.get_source_entity(sed.source_id).id;
+
+            let status_effect = build_status_effect(
+                sed.clone(),
+                player_id,
+                source_id,
+                StatusEffectTargetType::Local,
+                now,
+            );
+    
+            self.register_status_effect(status_effect);
+        }
     }
 
-    pub fn on_identity_gain(&mut self, pkt: &PKTIdentityGaugeChangeNotify) {
+    pub fn on_identity_gain(
+        &mut self,
+        now: DateTime<Utc>,
+        player_id: u64,
+        identity: &Identity
+    ) {
 
         if self.encounter.local_player.is_empty() {
             if let Some((_, entity)) = self
                 .encounter
                 .entities
                 .iter()
-                .find(|(_, e)| e.id == pkt.player_id)
+                .find(|(_, e)| e.id == player_id)
             {
                 self.encounter.local_player.clone_from(&entity.name);
             } else {
@@ -1022,11 +1075,11 @@ impl EncounterState {
             .get_mut(&self.encounter.local_player)
         {
             let entry = (
-                Utc::now().timestamp_millis(),
+                now.timestamp_millis(),
                 (
-                    pkt.identity_gauge1,
-                    pkt.identity_gauge2,
-                    pkt.identity_gauge3,
+                    identity.gauge1,
+                    identity.gauge2,
+                    identity.gauge3,
                 ),
             );
             self.identity_log
@@ -1037,21 +1090,16 @@ impl EncounterState {
     }
 
     pub fn on_boss_shield(&mut self, target_entity: &Entity, shield: u64) {
-        // if target_entity.entity_type == EntityType::Boss
-        //     && target_entity.name == self.encounter.current_boss_name
-        // {
-           
-        // }
-
-        self.encounter
-            .entities
-            .entry(target_entity.name.clone())
-            .and_modify(|e| {
-                e.current_shield = shield;
-            });
+        if target_entity.entity_type == EntityType::Boss
+            && target_entity.name == self.encounter.current_boss_name
+        {
+            self.encounter
+                .entities
+                .entry(target_entity.name.clone())
+                .and_modify(|e| {
+                    e.current_shield = shield;
+                });
+        }
     }
 
-    
-    
-    
 }

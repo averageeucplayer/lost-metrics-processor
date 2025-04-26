@@ -18,11 +18,12 @@ pub struct PlayerTemplate {
     pub status_effect_datas: [StatusEffectData; 2]
 }
 
-pub struct NpcTemplate {
+pub struct NpcTemplate {    
     pub object_id: u64,
+    pub name: &'static str,
     pub type_id: u32,
     pub level: u16,
-    pub balance_level: u16,
+    pub balance_level: Option<u16>,
     pub stat_pairs: [StatPair; 2],
     pub status_effect_datas: [StatusEffectData; 0]
 }
@@ -58,13 +59,35 @@ pub struct ProjectileTemplate {
     pub skill_effect: u32
 }
 
-pub const STATUS_EFFECT_TEMPLATE_BARD_ATTACK_POWER_BUFF: StatusEffectTemplate = StatusEffectTemplate {
+pub const STATUS_EFFECT_TEMPLATE_FREEZE: StatusEffectTemplate = StatusEffectTemplate {
     character_id: 0,
     source_id: 0,
-    status_effect_id: 0,
-    status_effect_instance_id: 1,
+    status_effect_id: 602000088,
+    status_effect_instance_id: 9001,
     value: None,
-    total_time: 0.0,
+    total_time: 1000.0,
+    stack_count: 0,
+    end_tick: 04
+};
+
+pub const STATUS_EFFECT_TEMPLATE_SHIELD: StatusEffectTemplate = StatusEffectTemplate {
+    character_id: 0,
+    source_id: 0,
+    status_effect_id: 700006103,
+    status_effect_instance_id: 9002,
+    value: None,
+    total_time: 1000.0,
+    stack_count: 0,
+    end_tick: 04
+};
+
+pub const STATUS_EFFECT_TEMPLATE_BARD_ATTACK_POWER_BUFF: StatusEffectTemplate = StatusEffectTemplate {
+    character_id: 2,
+    source_id: 2,
+    status_effect_id: 211606,
+    status_effect_instance_id: 20002,
+    value: None,
+    total_time: 8.0,
     stack_count: 0,
     end_tick: 04
 };
@@ -84,10 +107,11 @@ pub const PROJECTILE_TEMPLATE_SORCERESS_DESTRUCTION: ProjectileTemplate = Projec
 };
 
 pub const NPC_TEMPLATE_THAEMINE_THE_LIGHTQUELLER: NpcTemplate = NpcTemplate {
+    name: "Thaemine the Lightqueller",
     object_id: 1000,
     type_id: 480544,
     level: 60,
-    balance_level: 60,
+    balance_level: Some(60),
     stat_pairs: [
         StatPair {
             stat_type: 1,
@@ -123,8 +147,8 @@ pub const PLAYER_TEMPLATE_SORCERESS: PlayerTemplate = PlayerTemplate {
             end_tick: 0,
             stack_count: 0,
             status_effect_id: 0,
-            status_effect_instance_id: 1,
-            total_time: 0.0,
+            status_effect_instance_id: 1001,
+            total_time: 10000.0,
             value: Some(vec![])
         },
         StatusEffectData {
@@ -132,8 +156,8 @@ pub const PLAYER_TEMPLATE_SORCERESS: PlayerTemplate = PlayerTemplate {
             end_tick: 0,
             stack_count: 0,
             status_effect_id: 0,
-            status_effect_instance_id: 1,
-            total_time: 0.0,
+            status_effect_instance_id: 1002,
+            total_time: 10000.0,
             value: Some(vec![])
         }
     ]
@@ -157,21 +181,21 @@ pub const PLAYER_TEMPLATE_BARD: PlayerTemplate = PlayerTemplate {
     ],
     status_effect_datas: [
         StatusEffectData {
-            source_id: 1,
+            source_id: 2,
             end_tick: 0,
             stack_count: 0,
-            status_effect_id: 0,
-            status_effect_instance_id: 1,
-            total_time: 0.0,
+            status_effect_id: 20004, // Vitality Training
+            status_effect_instance_id: 2001,
+            total_time: 10000.0,
             value: Some(vec![])
         },
         StatusEffectData {
-            source_id: 1,
+            source_id: 2,
             end_tick: 0,
             stack_count: 0,
-            status_effect_id: 0,
-            status_effect_instance_id: 1,
-            total_time: 0.0,
+            status_effect_id: 21304, // Improved Swiftness
+            status_effect_instance_id: 2002,
+            total_time: 10000.0,
             value: Some(vec![])
         }
     ]
@@ -195,21 +219,21 @@ pub const PLAYER_TEMPLATE_BERSERKER: PlayerTemplate = PlayerTemplate {
     ],
     status_effect_datas: [
         StatusEffectData {
-            source_id: 1,
+            source_id: 3,
             end_tick: 0,
             stack_count: 0,
-            status_effect_id: 0,
-            status_effect_instance_id: 1,
-            total_time: 0.0,
+            status_effect_id: 20004, // Vitality Training
+            status_effect_instance_id: 3001,
+            total_time: 10000.0,
             value: Some(vec![])
         },
         StatusEffectData {
-            source_id: 1,
+            source_id: 3,
             end_tick: 0,
             stack_count: 0,
-            status_effect_id: 0,
-            status_effect_instance_id: 1,
-            total_time: 0.0,
+            status_effect_id: 21004, //  Improved Crit
+            status_effect_instance_id: 3002,
+            total_time: 10000.0,
             value: Some(vec![])
         }
     ]
@@ -233,21 +257,21 @@ pub const PLAYER_TEMPLATE_SOULEATER: PlayerTemplate = PlayerTemplate {
     ],
     status_effect_datas: [
         StatusEffectData {
-            source_id: 1,
+            source_id: 4,
             end_tick: 0,
             stack_count: 0,
-            status_effect_id: 0,
-            status_effect_instance_id: 1,
-            total_time: 0.0,
+            status_effect_id: 20004, // Vitality Training
+            status_effect_instance_id: 4001,
+            total_time: 10000.0,
             value: Some(vec![])
         },
         StatusEffectData {
-            source_id: 1,
+            source_id: 4,
             end_tick: 0,
             stack_count: 0,
-            status_effect_id: 0,
-            status_effect_instance_id: 1,
-            total_time: 0.0,
+            status_effect_id: 21004, //  Improved Crit
+            status_effect_instance_id: 4002,
+            total_time: 10000.0,
             value: Some(vec![])
         }
     ]

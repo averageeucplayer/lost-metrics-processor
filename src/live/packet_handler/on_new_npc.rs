@@ -11,6 +11,7 @@ use lost_metrics_core::models::{Entity, EntityType, StatusEffectTargetType};
 use lost_metrics_misc::get_npc_entity_type_name_grade;
 use lost_metrics_sniffer_stub::decryption::DamageEncryptionHandlerTrait;
 use lost_metrics_sniffer_stub::packets::definitions::*;
+use lost_metrics_sniffer_stub::packets::structures::NpcStruct;
 use lost_metrics_store::encounter_service::EncounterService;
 
 use super::DefaultPacketHandler;
@@ -26,64 +27,28 @@ where
     ES: EncounterService {
     pub fn on_new_npc(&self, now: DateTime<Utc>, data: &[u8], state: &mut EncounterState) -> anyhow::Result<()> {
 
-        let packet = PKTNewNpc::new(data)?;
-        let (hp, max_hp) = get_current_and_max_hp(&packet.npc_struct.stat_pairs);
-        let entity = {
-            let type_id = packet.npc_struct.type_id;
-            let object_id = packet.npc_struct.object_id;
-            let status_effect_datas = packet.npc_struct.status_effect_datas;
-    
-            let (entity_type, name, grade) = get_npc_entity_type_name_grade(
+        let PKTNewNpc {
+            npc_struct: NpcStruct {
+                balance_level,
+                level,
                 object_id,
                 type_id,
-                max_hp);
-    
-            let npc = Entity {
-                id: object_id,
-                entity_type,
-                name,
-                grade,
-                npc_id: type_id,
-                level: packet.npc_struct.level,
-                balance_level: packet.npc_struct.balance_level.unwrap_or(packet.npc_struct.level),
-                push_immune: entity_type == EntityType::Boss,
-                stats: packet
-                    .npc_struct
-                    .stat_pairs
-                    .iter()
-                    .map(|sp| (sp.stat_type, sp.value))
-                    .collect(),
-                ..Default::default()
-            };
-            state.entities.insert(object_id, npc.clone());
-            // state.status_tracker.borrow_mut().remove_local_object(object_id);
-            state.local_status_effect_registry.remove(&object_id);
-            // state.build_and_register_status_effects(status_effect_datas, object_id);
-            // let timestamp = Utc::now();
-            for sed in status_effect_datas.into_iter() {
-                // state.build_and_register_status_effect(&sed, object_id, now, None);
-                let source_id = state.get_source_entity(sed.source_id).id;
-
-                let status_effect = build_status_effect(
-                    sed.clone(),
-                    object_id,
-                    source_id,
-                    StatusEffectTargetType::Local,
-                    now,
-                    None,
-                );
-        
-                state.register_status_effect(status_effect.clone());
+                stat_pairs,
+                status_effect_datas
             }
-            npc
-        };
+        } = PKTNewNpc::new(data)?;
         
-        info!(
-            "new {}: {}, eid: {}, id: {}, hp: {}",
-            entity.entity_type, entity.name, entity.id, entity.npc_id, max_hp
+        state.on_new_npc(
+            false,
+            now,
+            object_id,
+            type_id,
+            object_id,
+            level,
+            balance_level,
+            stat_pairs,
+            status_effect_datas
         );
-        info!("{entity}");
-        state.on_new_npc(entity, hp, max_hp);
 
         Ok(())
     }
@@ -111,5 +76,6 @@ mod tests {
         
         let mut packet_handler = packet_handler_builder.build();
         packet_handler.handle(opcode, &data, &mut state, &options).unwrap();
+        assert_eq!(state.encounter.current_boss_name, template.name);
     }
 }

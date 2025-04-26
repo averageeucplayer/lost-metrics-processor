@@ -25,13 +25,14 @@ where
     ES: EncounterService {
     pub fn on_skill_start(&self, now: DateTime<Utc>, data: &[u8], state: &mut EncounterState) -> anyhow::Result<()> {
 
-        let packet = PKTSkillStartNotify::new(&data)?;
-        let skill_id = packet.skill_id;
+        let PKTSkillStartNotify {
+            skill_id,
+            skill_option_data,
+            source_id
+        } = PKTSkillStartNotify::new(&data)?;
 
-        let mut entity = state.get_source_entity(packet.source_id).clone();
-        // state.guess_is_player(entity, packet.skill_id);
+        let mut entity = state.get_source_entity(source_id).clone();
         entity.guess_is_player(skill_id);
-        let skill_option_data = packet.skill_option_data;
 
         let tripod_index =
         skill_option_data.tripod_index

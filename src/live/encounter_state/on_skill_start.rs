@@ -66,10 +66,10 @@ impl EncounterState {
 
         if entity.class_id == 0
             && source_entity.entity_type == EntityType::Player
-            && source_entity.class_id > 0
+            && source_entity.class_id != Class::Unknown
         {
-            entity.class_id = source_entity.class_id;
-            entity.class = get_class_from_id(&source_entity.class_id);
+            entity.class_id = source_entity.class_id as u32;
+            entity.class = source_entity.class_id.as_ref().to_string();
         }
 
         entity.is_dead = false;

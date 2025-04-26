@@ -104,7 +104,7 @@ where
         match opcode {
             Pkt::CounterAttackNotify => self.on_counterattack(data, state)?,
             Pkt::DeathNotify => self.on_death(now, data, state)?,
-            Pkt::IdentityGaugeChangeNotify => self.on_identity_change(data, state)?,
+            Pkt::IdentityGaugeChangeNotify => self.on_identity_change(now ,data, state)?,
             Pkt::InitEnv => self.on_init_env(data, state, &options.version)?,
             Pkt::InitPC => self.on_init_pc(now, data, state)?,
             Pkt::NewPC => self.on_new_pc(now, data, state)?,
@@ -126,7 +126,7 @@ where
             Pkt::PartyStatusEffectRemoveNotify => self.on_party_status_effect_remove(data, state)?,
             Pkt::PartyStatusEffectResultNotify => self.on_party_status_effect_result(data, state)?,
             Pkt::StatusEffectAddNotify => self.on_status_effect_add(now, data, state)?,
-            Pkt::StatusEffectRemoveNotify => self.on_status_effect_remove(data, state)?,
+            Pkt::StatusEffectRemoveNotify => self.on_status_effect_remove(now, data, state)?,
             Pkt::TriggerBossBattleStatus => self.on_trigger_boss_battle_status(state, &options.version)?,
             Pkt::TriggerStartNotify => self.on_trigger_start(now, data, state, &options.version)?,
             Pkt::ZoneMemberLoadStatusNotify => self.on_zone_member_load(data, state)?,
