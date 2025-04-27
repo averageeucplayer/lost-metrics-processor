@@ -35,11 +35,11 @@ where
 
         if entity.class_id == Class::Arcanist {
             state.on_skill_start(
-                &entity,
+                source_id,
                 skill_id,
                 None,
                 None,
-                now.timestamp_millis(),
+                now,
             );
         }
 
@@ -60,8 +60,6 @@ mod tests {
         let mut packet_handler_builder = PacketHandlerBuilder::new();
         let mut state_builder = StateBuilder::new();
         
-      
-
         let template = PLAYER_TEMPLATE_SORCERESS;
         let (opcode, data) = PacketBuilder::skill_cast(template.id, SorceressSkills::Doomsday as u32);
         state_builder.create_player(&template);

@@ -1,5 +1,4 @@
 use lost_metrics_core::models::*;
-use lost_metrics_misc::get_class_from_id;
 use lost_metrics_store::encounter_service::EncounterService;
 use tokio::sync::Mutex;
 use uuid::Uuid;

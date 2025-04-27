@@ -242,7 +242,7 @@ pub fn build_status_effect(
     target_type: StatusEffectTargetType,
     timestamp: DateTime<Utc>,
 ) -> StatusEffectDetails {
-    let value = get_status_effect_value(&se_data.value);
+    let value = get_status_effect_value(&se_data.value.bytearray_0);
     let mut status_effect_category = StatusEffectCategory::Other;
     let mut buff_category = StatusEffectBuffCategory::Other;
     let mut show_type = StatusEffectShowType::Other;

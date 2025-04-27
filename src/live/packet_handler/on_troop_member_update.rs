@@ -48,7 +48,7 @@ where
             }
 
             for se in status_effect_datas.iter() {
-                let val = get_status_effect_value(&se.value);
+                let val = get_status_effect_value(&se.value.bytearray_0);
                 let (status_effect, old_value) =
                         state.sync_status_effect(
                             se.status_effect_instance_id,
@@ -95,7 +95,7 @@ mod tests {
     use lost_metrics_sniffer_stub::packets::opcodes::Pkt;
     use tokio::runtime::Handle;
     use crate::live::{packet_handler::*, test_utils::create_start_options};
-    use crate::live::packet_handler::test_utils::{PacketBuilder, PacketHandlerBuilder, StateBuilder, NPC_TEMPLATE_THAEMINE_THE_LIGHTQUELLER, PLAYER_TEMPLATE_BARD, STATUS_EFFECT_TEMPLATE_BARD_ATTACK_POWER_BUFF, STATUS_EFFECT_TEMPLATE_SHIELD};
+    use crate::live::packet_handler::test_utils::{to_status_effect_value, PacketBuilder, PacketHandlerBuilder, PartyTemplate, StateBuilder, NPC_TEMPLATE_THAEMINE_THE_LIGHTQUELLER, PLAYER_TEMPLATE_BARD, PLAYER_TEMPLATE_BERSERKER, PLAYER_TEMPLATE_SORCERESS, PLAYER_TEMPLATE_SOULEATER, STATUS_EFFECT_TEMPLATE_BARD_ATTACK_POWER_BUFF, STATUS_EFFECT_TEMPLATE_BARD_WIND_OF_MUSIC_SHIELD, STATUS_EFFECT_TEMPLATE_SHIELD};
 
     #[tokio::test]
     async fn should_update_entity_hp() {
@@ -108,7 +108,7 @@ mod tests {
             player_template.character_id,
             0,
             10000,
-            STATUS_EFFECT_TEMPLATE_BARD_ATTACK_POWER_BUFF
+            &STATUS_EFFECT_TEMPLATE_BARD_ATTACK_POWER_BUFF
         );
         
         state_builder.create_player(&player_template);
@@ -126,12 +126,12 @@ mod tests {
 
         let npc_template = NPC_TEMPLATE_THAEMINE_THE_LIGHTQUELLER;
         let mut status_effect = STATUS_EFFECT_TEMPLATE_SHIELD;
-        status_effect.value = Some(vec![1]);
+        status_effect.value = to_status_effect_value(1000);
         let (opcode, data) = PacketBuilder::troop_member_update(
             npc_template.object_id,
             0,
             10000,
-            status_effect
+            &status_effect
         );
         
         state_builder.create_npc(&npc_template);
@@ -140,5 +140,60 @@ mod tests {
         
         let mut packet_handler = packet_handler_builder.build();
         packet_handler.handle(opcode, &data, &mut state, &options).unwrap();
+    }
+
+    #[tokio::test]
+    async fn should_update_shield_stats() {
+        let options = create_start_options();
+        let mut packet_handler_builder = PacketHandlerBuilder::new();
+        let mut state_builder = StateBuilder::new();
+
+        let shield_value = 10000;
+        let source_player_template = PLAYER_TEMPLATE_BARD;
+        let target_player_template = PLAYER_TEMPLATE_SORCERESS;
+        let mut status_effect = STATUS_EFFECT_TEMPLATE_BARD_WIND_OF_MUSIC_SHIELD;
+        status_effect.source_id = source_player_template.id;
+        status_effect.value = to_status_effect_value(shield_value);
+
+        let mut party_template = PartyTemplate {
+            party_instance_id: 1,
+            raid_instance_id: 1,
+            members: [
+                PLAYER_TEMPLATE_BARD,
+                PLAYER_TEMPLATE_BERSERKER,
+                PLAYER_TEMPLATE_SORCERESS,
+                PLAYER_TEMPLATE_SOULEATER
+            ]
+        };
+        
+        state_builder.local_player(&source_player_template);
+        state_builder.create_player(&source_player_template);
+        state_builder.create_player(&target_player_template);
+        state_builder.create_party(&party_template);
+        state_builder.add_party_status_effect(target_player_template.character_id, &status_effect);
+        
+        status_effect.value = to_status_effect_value(5000);
+        let (opcode, data) = PacketBuilder::troop_member_update(
+            target_player_template.character_id,
+            10000,
+            10000,
+            &status_effect
+        );
+
+        let mut state = state_builder.build();
+        
+        let mut packet_handler = packet_handler_builder.build();
+        packet_handler.handle(opcode, &data, &mut state, &options).unwrap();
+   
+        {
+            let source = state.get_or_create_encounter_entity(source_player_template.id).unwrap();            
+            assert_eq!(source.damage_stats.shields_given, shield_value);
+        }
+
+        {
+            let target = state.get_or_create_encounter_entity(target_player_template.id).unwrap();
+            assert_eq!(target.damage_stats.shields_received, shield_value);
+        }
+        
     }
 }

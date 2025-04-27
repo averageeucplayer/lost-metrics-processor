@@ -6,7 +6,6 @@ use crate::live::utils::{get_current_and_max_hp};
 use anyhow::Ok;
 use hashbrown::HashMap;
 use log::*;
-use lost_metrics_misc::get_class_from_id;
 use lost_metrics_sniffer_stub::decryption::DamageEncryptionHandlerTrait;
 use lost_metrics_sniffer_stub::packets::definitions::*;
 use lost_metrics_store::encounter_service::EncounterService;

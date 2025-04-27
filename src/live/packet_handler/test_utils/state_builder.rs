@@ -8,10 +8,11 @@ use anyhow::Ok;
 use chrono::Utc;
 use hashbrown::HashMap;
 use log::*;
-use lost_metrics_core::models::StatusEffect;
-use lost_metrics_sniffer_stub::packets::structures::StatusEffectData;
+use lost_metrics_core::models::{LocalInfo, StatusEffect};
+use lost_metrics_sniffer_stub::packets::definitions::PKTPartyInfoInner;
+use lost_metrics_sniffer_stub::packets::structures::{StatusEffectData, StatusEffectDataValue};
 
-use super::{NpcTemplate, PlayerTemplate, StatusEffectTemplate};
+use super::{NpcTemplate, PartyTemplate, PlayerTemplate, StatusEffectTemplate};
 
 pub struct StateBuilder {
     state: EncounterState
@@ -81,11 +82,53 @@ impl StateBuilder {
             template.status_effect_datas.to_vec());
     }
 
-    pub fn add_status_effect(&mut self, object_id: u64, status_effect: StatusEffectTemplate) {
+    pub fn local_player(&mut self, template: &PlayerTemplate) {
+        let now =  Utc::now();
 
+        self.state.on_init_pc(
+            now,
+            template.id,
+            template.class_id,
+            template.character_id,
+            template.name.to_string(),
+            template.gear_level,
+            template.stat_pairs.to_vec(),
+            template.status_effect_datas.to_vec());
     }
 
-    pub fn add_party_status_effect(&mut self, object_id: u64, status_effect: StatusEffectTemplate) {
+    pub fn create_party(&mut self, template: &PartyTemplate) {
+        self.state.party_info(
+            template.party_instance_id,
+            template.raid_instance_id,
+            template.members.iter().map(|pr |
+                PKTPartyInfoInner {
+                    character_id: pr.character_id,
+                    class_id: pr.class_id,
+                    gear_level: pr.gear_level,
+                    name: pr.name.to_string(),
+                }
+            ).collect(),
+            &LocalInfo::default()
+        );
+    }
+
+    pub fn add_status_effect(&mut self, object_id: u64, status_effect: &StatusEffectTemplate) {
+        let now =  Utc::now();
+        let data = StatusEffectData {
+            source_id: status_effect.source_id,
+            stack_count: status_effect.stack_count,
+            end_tick: status_effect.end_tick,
+            status_effect_id: status_effect.status_effect_id,
+            status_effect_instance_id: status_effect.status_effect_instance_id,
+            total_time: status_effect.total_time,
+            value: StatusEffectDataValue {
+                bytearray_0: status_effect.value.clone(),
+            }
+        };
+        self.state.on_status_effect_add(now, object_id, data);
+    }
+
+    pub fn add_party_status_effect(&mut self, object_id: u64, status_effect: &StatusEffectTemplate) {
         let now =  Utc::now();
         let datas = vec![
             StatusEffectData {
@@ -95,7 +138,9 @@ impl StateBuilder {
                 status_effect_id: status_effect.status_effect_id,
                 status_effect_instance_id: status_effect.status_effect_instance_id,
                 total_time: status_effect.total_time,
-                value: status_effect.value,
+                value: StatusEffectDataValue {
+                    bytearray_0: status_effect.value.clone(),
+                }
             }
         ];
         self.state.on_party_status_effect_add(now, object_id, datas);

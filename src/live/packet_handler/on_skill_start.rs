@@ -31,35 +31,12 @@ where
             source_id
         } = PKTSkillStartNotify::new(&data)?;
 
-        let mut entity = state.get_source_entity(source_id).clone();
-        entity.guess_is_player(skill_id);
-
-        let tripod_index =
-        skill_option_data.tripod_index
-                .map(|tripod_index| lost_metrics_core::models::TripodIndex {
-                    first: tripod_index.first,
-                    second: tripod_index.second,
-                    third: tripod_index.third,
-                });
-        let tripod_level =skill_option_data
-                .tripod_level
-                .map(|tripod_level| lost_metrics_core::models::TripodLevel {
-                    first: tripod_level.first,
-                    second: tripod_level.second,
-                    third: tripod_level.third,
-                });
-        let timestamp = now.timestamp_millis();
-        let (skill_id, summon_source) = state.on_skill_start(
-            &entity,
-            skill_id,
-            tripod_index,
-            tripod_level,
-            timestamp,
-        );
-
-        if entity.entity_type == EntityType::Player && skill_id > 0 {
-            state.new_cast(entity.id, skill_id, summon_source, timestamp);
-        }
+            state.on_skill_start(
+                source_id,
+                skill_id,
+                skill_option_data.tripod_index,
+                skill_option_data.tripod_level,
+            now);
 
         Ok(())
     }

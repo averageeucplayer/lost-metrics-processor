@@ -20,3 +20,14 @@ git clone https://github.com/averageeucplayer/lost-metrics-processor.git
 [dependencies]
 lost-metrics-processor = { git = "https://github.com/averageeucplayer/lost-metrics-processor" }
 ```
+
+### 3️⃣ Consume in your project
+
+```rust
+```
+
+## 🧪 Coverage
+
+```sh
+cargo llvm-cov --summary-only 
+```

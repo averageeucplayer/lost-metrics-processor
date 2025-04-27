@@ -8,7 +8,6 @@ use chrono::{DateTime, Utc};
 use hashbrown::HashMap;
 use log::*;
 use lost_metrics_core::models::{Entity, EntityType, StatusEffectTargetType};
-use lost_metrics_misc::get_class_from_id;
 use lost_metrics_sniffer_stub::decryption::DamageEncryptionHandlerTrait;
 use lost_metrics_sniffer_stub::packets::definitions::*;
 use lost_metrics_store::encounter_service::EncounterService;

@@ -9,7 +9,7 @@ use anyhow::Ok;
 use chrono::{DateTime, Utc};
 use hashbrown::HashMap;
 use log::*;
-use lost_metrics_core::models::DamageEvent;
+use lost_metrics_core::models::{DamageEvent, EntityType};
 use lost_metrics_sniffer_stub::decryption::DamageEncryptionHandlerTrait;
 use lost_metrics_sniffer_stub::packets::definitions::*;
 use lost_metrics_store::encounter_service::EncounterService;
@@ -47,8 +47,18 @@ where
                 *valid = false;
             }
 
-            let target_entity = state.get_or_create_entity(event.skill_damage_event.target_id).clone();
-            state.on_abnormal_move(&target_entity, &event.skill_move_option_data, now_milliseconds);
+            let target_id = event.skill_damage_event.target_id;
+            let target_entity = state.get_or_create_entity(target_id).clone();
+            let option_data = &event.skill_move_option_data;
+
+            if let Some(down_time) = option_data.down_time.filter(|_| target_entity.entity_type == EntityType::Player) {
+                let entity = state.get_encounter_entity(&target_entity);
+                entity.update_incapacitation(
+                    down_time,
+                    option_data.stand_up_time,
+                    option_data.move_time,
+                    now_milliseconds);
+            }
         }
 
         let events: Vec<_> = events.into_iter().map(|pr| pr.skill_damage_event).collect();
@@ -89,6 +99,7 @@ mod tests {
             npc_template.object_id,
             SouleaterSkills::LethalSpinning as u32,
             damage,
+            None,
             HitOption::FlankAttack,
             HitFlag::Normal,
             max_hp - damage,
@@ -104,10 +115,12 @@ mod tests {
         
         let mut packet_handler = packet_handler_builder.build();
 
-        state.raid_end_cd = state.raid_end_cd - Duration::from_secs(11);
-
         packet_handler.handle(opcode, &data, &mut state, &options).unwrap();
-        // assert_eq!(state.encounter.entities.get(&entity_name).unwrap().damage_stats.crit_damage, 3e9 as i64);
-        // assert_eq!(state.encounter.entities.get(boss_name).unwrap().current_hp, 0);
+
+        let source = state.get_or_create_encounter_entity(player_template.id).unwrap();
+        assert_eq!(source.damage_stats.damage_dealt, damage);
+
+        let target = state.get_or_create_encounter_entity(npc_template.object_id).unwrap();
+        assert_eq!(target.damage_stats.damage_taken, damage);
     }
 }

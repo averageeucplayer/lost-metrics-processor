@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use hashbrown::HashMap;
 use lost_metrics_core::models::*;
+use lost_metrics_data::SkillExtensions;
 use lost_metrics_misc::*;
 use lost_metrics_sniffer_stub::packets::structures::SkillDamageEvent;
 use core::time;
@@ -298,7 +299,7 @@ impl EncounterState {
 
         source_encounter_entity.damage_stats.damage_dealt += damage;
 
-        let is_hyper_awakening = is_hyper_awakening_skill(skill.id);
+        let is_hyper_awakening = skill.is_hyper_awakening();
         if is_hyper_awakening {
             source_encounter_entity.damage_stats.hyper_awakening_damage += damage;
         }

@@ -41,7 +41,7 @@ mod tests {
     use lost_metrics_sniffer_stub::packets::structures::StatusEffectData;
     use tokio::runtime::Handle;
     use crate::live::{packet_handler::*, test_utils::create_start_options};
-    use crate::live::packet_handler::test_utils::{PacketBuilder, PacketHandlerBuilder, StateBuilder, STATUS_EFFECT_TEMPLATE_BARD_ATTACK_POWER_BUFF};
+    use crate::live::packet_handler::test_utils::{PacketBuilder, PacketHandlerBuilder, StateBuilder, PLAYER_TEMPLATE_BARD, STATUS_EFFECT_TEMPLATE_BARD_ATTACK_POWER_BUFF};
 
     #[tokio::test]
     async fn should_register_status_effect() {
@@ -49,8 +49,12 @@ mod tests {
         let mut packet_handler_builder = PacketHandlerBuilder::new();
         let mut state_builder = StateBuilder::new();
 
-        let (opcode, data) = PacketBuilder::party_status_effect_add(STATUS_EFFECT_TEMPLATE_BARD_ATTACK_POWER_BUFF);
+        let player_template = PLAYER_TEMPLATE_BARD;
+        let (opcode, data) = PacketBuilder::party_status_effect_add(
+            player_template.character_id,
+            STATUS_EFFECT_TEMPLATE_BARD_ATTACK_POWER_BUFF);
         
+        state_builder.create_player(&player_template);
         let mut state = state_builder.build();
 
         let mut packet_handler = packet_handler_builder.build();

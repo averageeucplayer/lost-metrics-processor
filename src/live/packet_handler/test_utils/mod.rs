@@ -1,8 +1,10 @@
 mod templates;
 mod packet_builder;
 mod packet_handler_builder;
+mod player_templates;
 pub mod state_builder;
 
+pub use player_templates::*;
 pub use templates::*;
 pub use packet_builder::*;
 pub use packet_handler_builder::*;

@@ -99,7 +99,7 @@ mod tests {
         let status_effect = STATUS_EFFECT_TEMPLATE_SHIELD;
 
         state_builder.create_player(&player_template);
-        state_builder.add_party_status_effect(player_template.id, status_effect);
+        state_builder.add_party_status_effect(player_template.id, &status_effect);
         let mut state = state_builder.build();
 
         let (opcode, data) = PacketBuilder::party_status_effect_remove(player_template.character_id, vec![], 4);

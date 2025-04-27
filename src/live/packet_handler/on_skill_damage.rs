@@ -95,6 +95,7 @@ mod tests {
             npc_template.object_id,
             SouleaterSkills::LethalSpinning as u32,
             damage,
+            None,
             HitOption::FlankAttack,
             HitFlag::Normal,
             max_hp - damage,

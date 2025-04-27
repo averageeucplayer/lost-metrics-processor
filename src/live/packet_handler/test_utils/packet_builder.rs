@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc, sync::{Arc, RwLock}};
 use crate::live::{abstractions::*, encounter_state::EncounterState, flags::MockFlags, packet_handler::*, stats_api::MockStatsApi};
 use crate::live::test_utils::*;
 use lost_metrics_data::{NPC_DATA, SKILL_BUFF_DATA};
-use lost_metrics_sniffer_stub::packets::{common::SkillMoveOptionData, definitions::{PKTNewPC, PKTNewPCInner}, structures::{NpcStruct, SkillDamageEvent, StatPair, StatusEffectData}};
+use lost_metrics_sniffer_stub::packets::{common::SkillMoveOptionData, definitions::{PKTNewPC, PKTNewPCInner}, structures::{NpcStruct, SkillDamageEvent, SkillDamageEventInner, StatPair, StatusEffectData, StatusEffectDataValue}};
 use lost_metrics_store::encounter_service;
 use serde::Serialize;
 use std::fmt::Debug;
@@ -70,11 +70,11 @@ impl PacketBuilder {
         (opcode, data)
     }
 
-    pub fn zone_member_load() -> (Pkt, Vec<u8>) {
+    pub fn zone_member_load(zone_id: u32, zone_level: u32) -> (Pkt, Vec<u8>) {
         let opcode = Pkt::ZoneMemberLoadStatusNotify;
         let data = PKTZoneMemberLoadStatusNotify {
-            zone_id: 1,
-            zone_level: 1
+            zone_id,
+            zone_level,
         };
         let data = data.encode().unwrap();
 
@@ -120,6 +120,7 @@ impl PacketBuilder {
         target_id: u64,
         skill_id: u32,
         damage: i64,
+        shield_damage: Option<i64>,
         hit_option: HitOption,
         hit_flag: HitFlag,
         cur_hp: i64,
@@ -140,7 +141,10 @@ impl PacketBuilder {
                         cur_hp,
                         max_hp,
                         damage_attr: None,
-                        damage_type: 0
+                        damage_type: 0,
+                        sub_p_k_t_skill_damage_abnormal_move_notify_4_2_9: SkillDamageEventInner {
+                            p64_0: shield_damage,
+                        }
                     },
                     skill_move_option_data: SkillMoveOptionData {
                         down_time,
@@ -162,6 +166,7 @@ impl PacketBuilder {
         target_id: u64,
         skill_id: u32,
         damage: i64,
+        shield_damage: Option<i64>,
         hit_option: HitOption,
         hit_flag: HitFlag,
         cur_hp: i64,
@@ -178,7 +183,10 @@ impl PacketBuilder {
                     cur_hp,
                     max_hp,
                     damage_attr: None,
-                    damage_type: 0
+                    damage_type: 0,
+                    sub_p_k_t_skill_damage_abnormal_move_notify_4_2_9: SkillDamageEventInner {
+                        p64_0: shield_damage,
+                    }
                 }
             ],
             skill_id,
@@ -344,7 +352,7 @@ impl PacketBuilder {
                 source_id: template.source_id,
                 status_effect_id: template.status_effect_id,
                 status_effect_instance_id: template.status_effect_instance_id,
-                value: template.value,
+                value: StatusEffectDataValue { bytearray_0: template.value },
                 total_time: template.total_time,
                 stack_count: template.stack_count,
                 end_tick: template.end_tick
@@ -355,15 +363,15 @@ impl PacketBuilder {
         (opcode, data)
     }
 
-    pub fn party_status_effect_add(template: StatusEffectTemplate) -> (Pkt, Vec<u8>) {
+    pub fn party_status_effect_add(character_id: u64, template: StatusEffectTemplate) -> (Pkt, Vec<u8>) {
         let opcode = Pkt::PartyStatusEffectAddNotify;
         let data = PKTPartyStatusEffectAddNotify {
-            character_id: template.character_id,
+            character_id,
             status_effect_datas: vec![StatusEffectData {
                 source_id: template.source_id,
                 status_effect_id: template.status_effect_id,
                 status_effect_instance_id: template.status_effect_instance_id,
-                value: Some(vec![]),
+                value: StatusEffectDataValue { bytearray_0: template.value },
                 total_time: template.total_time,
                 stack_count: template.stack_count,
                 end_tick: template.end_tick,
@@ -386,13 +394,12 @@ impl PacketBuilder {
         (opcode, data)
     }
 
-    pub fn status_effect_remove(template: StatusEffectTemplate) -> (Pkt, Vec<u8>) {
+    pub fn status_effect_remove(object_id: u64, reason: u8, template: &StatusEffectTemplate) -> (Pkt, Vec<u8>) {
         let opcode = Pkt::StatusEffectRemoveNotify;
         let data = PKTStatusEffectRemoveNotify {
-            object_id: 1,
-            character_id: 1,
-            status_effect_instance_ids: vec![1],
-            reason: 0
+            object_id: object_id,
+            status_effect_instance_ids: vec![template.status_effect_instance_id],
+            reason
         };
         let data = data.encode().unwrap();
 
@@ -436,7 +443,7 @@ impl PacketBuilder {
         character_id: u64,
         cur_hp: i64,
         max_hp: i64,
-        template: StatusEffectTemplate
+        template: &StatusEffectTemplate
     ) -> (Pkt, Vec<u8>) {
         let opcode = Pkt::TroopMemberUpdateMinNotify;
         let data = PKTTroopMemberUpdateMinNotify {
@@ -448,7 +455,7 @@ impl PacketBuilder {
                     source_id: template.source_id,
                     status_effect_id: template.status_effect_id,
                     status_effect_instance_id: template.status_effect_instance_id,
-                    value: template.value,
+                    value: StatusEffectDataValue { bytearray_0: template.value.clone() },
                     total_time: template.total_time,
                     stack_count: template.stack_count,
                     end_tick: template.end_tick

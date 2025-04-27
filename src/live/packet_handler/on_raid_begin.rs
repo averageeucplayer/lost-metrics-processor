@@ -79,7 +79,7 @@ mod tests {
         let mut packet_handler_builder = PacketHandlerBuilder::new();
         let mut state_builder = StateBuilder::new();
         
-        let (opcode, data) = PacketBuilder::raid_begin(308226);
+        let (opcode, data) = PacketBuilder::raid_begin(308428);
 
         let mut state = state_builder.build();
         

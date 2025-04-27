@@ -49,7 +49,7 @@ mod tests {
     use lost_metrics_sniffer_stub::packets::opcodes::Pkt;
     use tokio::runtime::Handle;
     use crate::live::{packet_handler::*, test_utils::create_start_options};
-    use crate::live::packet_handler::test_utils::{PacketHandlerBuilder, StateBuilder};
+    use crate::live::packet_handler::test_utils::{PacketBuilder, PacketHandlerBuilder, StateBuilder};
 
     #[tokio::test]
     async fn should_set_raid_difficulty() {
@@ -63,6 +63,7 @@ mod tests {
             zone_level: 1
         };
         let data = data.encode().unwrap();
+        let (opcode, data) = PacketBuilder::zone_member_load(30801, 1);
 
         let mut state = state_builder.build();
         

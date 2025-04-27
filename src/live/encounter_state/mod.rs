@@ -1,5 +1,4 @@
 mod on_damage;
-mod on_abnormal_move;
 mod save_to_db;
 mod on_cc_applied;
 mod on_cc_removed;
@@ -14,7 +13,7 @@ use hashbrown::hash_map::Entry;
 use hashbrown::{HashMap, HashSet};
 use log::{info, warn};
 use lost_metrics_core::models::*;
-use lost_metrics_misc::{boss_to_raid_map, get_class_from_id};
+use lost_metrics_misc::{boss_to_raid_map};
 use lost_metrics_sniffer_stub::packets::definitions::{PKTIdentityGaugeChangeNotify, PKTPartyInfo, PKTPartyInfoInner, PKTPartyStatusEffectAddNotify};
 use lost_metrics_sniffer_stub::packets::structures::{EquipItemData, StatPair, StatusEffectData};
 use lost_metrics_store::encounter_service::EncounterService;
@@ -147,7 +146,8 @@ impl EncounterState {
         }
     }
 
-    pub fn party_info(&mut self,
+    pub fn party_info(
+        &mut self,
         party_instance_id: u32,
         raid_instance_id: u32,
         party_member_datas: Vec<PKTPartyInfoInner>,
@@ -231,6 +231,45 @@ impl EncounterState {
                 );
             }
         }
+
+        let local_player_id = self.local_entity_id;
+
+        if let Some(entity) = self.entities.get(&local_player_id) {
+            let entities = &mut self.encounter.entities;
+
+            // we replace the existing local player if it exists, since its name might have changed (from hex or "You" to character name)
+            if let Some(mut local) = entities.remove(&self.encounter.local_player) {
+                // update local player name, insert back into encounter
+                self.encounter.local_player.clone_from(&entity.name);
+                
+                local.update(&entity);
+                local.class = entity.class_id.as_ref().to_string();
+    
+                entities.insert(self.encounter.local_player.clone(), local);
+            } else {
+                // cannot find old local player by name, so we look by local player's entity id
+                // this can happen when the user started meter late
+                let old_local = entities
+                    .iter()
+                    .find(|(_, e)| e.id == entity.id)
+                    .map(|(key, _)| key.clone());
+    
+                // if we find the old local player, we update its name and insert back into encounter
+                if let Some(old_local) = old_local {
+                    let mut new_local = entities[&old_local].clone();
+                    
+                    new_local.update(&entity);
+                    new_local.class = entity.class_id.as_ref().to_string();
+    
+                    entities.remove(&old_local);
+                    self.encounter.local_player.clone_from(&entity.name);
+                    entities.insert(self.encounter.local_player.clone(), new_local);
+                }
+            }
+        }
+
+        self.party_cache = None;
+        self.party_map_cache = HashMap::new();
     }
 
     pub fn on_status_effect_add(
@@ -359,7 +398,7 @@ impl EncounterState {
         }
         
         if character_id > 0 {
-            // println!("character_id: {}, entity_id: {}", character_id, entity_id);
+
             self.character_id_to_party_id.insert(character_id, party_id);
             if let Some(name) = name {
                 self.character_name_to_character_id
@@ -426,7 +465,6 @@ impl EncounterState {
             StatusEffectTargetType::Party => &mut self.party_status_effect_registry,
         };
 
-        // println!("registry: {:?}", registry);
         let ser = match registry.get_mut(&target_id) {
             Some(ser) => ser,
             None => return Vec::new(),
@@ -446,13 +484,12 @@ impl EncounterState {
             StatusEffectTargetType::Local => &mut self.local_status_effect_registry,
             StatusEffectTargetType::Party => &mut self.party_status_effect_registry,
         };
-        // println!("registry: {:?}", registry);
+
         let ser = match registry.get_mut(&target_id) {
             Some(ser) => ser,
             None => return Vec::new(),
         };
 
-        // println!("ser before: {:?}", ser);
         ser.retain(|_, se| se.expire_at.map_or(true, |expire_at| expire_at > timestamp));
 
         ser.values()
@@ -495,13 +532,13 @@ impl EncounterState {
         } else {
             false
         };
-        // println!("use_party_for_source: {:?}", use_party_for_source);
+
         let (source_id, source_type) = if use_party_for_source {
             (source_entity.character_id, StatusEffectTargetType::Party)
         } else {
             (source_entity.id, StatusEffectTargetType::Local)
         };
-        // println!("source_id: {:?}, source_type: {:?}", source_id, source_type);
+
 
         let status_effects_on_source =
             self.actually_get_status_effects(source_id, source_type, timestamp);
@@ -511,9 +548,9 @@ impl EncounterState {
         } else {
             false
         };
-        // println!("use_party_for_target: {:?}", use_party_for_target);
+
         let source_party_id = self.entity_id_to_party_id.get(&source_entity.id).cloned();
-        // println!("use_party_for_target: {:?}, source_party_id: {:?}", use_party_for_target, source_party_id);
+
         let mut status_effects_on_target = match (use_party_for_target, source_party_id) {
             (true, Some(source_party_id)) => self.get_status_effects_from_party(
                 target_entity.character_id,
@@ -538,10 +575,7 @@ impl EncounterState {
                 timestamp,
             ),
         };
-        // println!("status_effects_on_target: {:?}", status_effects_on_target);
-        // println!(
-        //     "status_effects_on_source: {:?}, status_effects_on_target: {:?}",
-        //     status_effects_on_source, status_effects_on_target);
+
         status_effects_on_target.retain(|se| {
             !(se.target_type == StatusEffectTargetType::Local
                 && se.category == StatusEffectCategory::Debuff
@@ -559,6 +593,13 @@ impl EncounterState {
         }
     }
 
+    pub fn get_encounter_entity(&mut self, entity: &Entity) -> &mut EncounterEntity {
+
+        self.encounter
+            .entities
+            .entry(entity.name.clone())
+            .or_insert_with(|| entity.into())
+    }
 
     pub fn get_or_create_encounter_entity(&mut self, instance_id: u64) -> Option<&mut EncounterEntity> {
 
@@ -602,7 +643,17 @@ impl EncounterState {
         };
 
         {
-            let entity = self.entities.entry(entity.id).or_insert_with(|| entity);
+            let entity = self.entities.entry(player_id)
+                .and_modify(|pr| {
+                    pr.entity_type = entity.entity_type;
+                    pr.character_id = character_id;
+                    pr.class_id = class_id.into();
+                    pr.name = name.clone();
+                    pr.stats = stat_pairs.iter()
+                        .map(|sp| (sp.stat_type, sp.value))
+                        .collect();
+                })
+                .or_insert_with(|| entity);
 
             self.encounter
                 .entities
@@ -638,7 +689,7 @@ impl EncounterState {
         self.entity_id_to_character_id.insert(player_id, character_id);
 
         self.complete_entry(character_id, player_id);
-        // println!("party status: {:?}", self.party_tracker.borrow().character_id_to_party_id);
+ 
         let local_character_id = if self.local_character_id != 0 {
             self.local_character_id
         } else {
@@ -704,7 +755,7 @@ impl EncounterState {
                 (entity.id, entity.name.clone())
             };
             let encounter_entity = self.encounter.entities.get(&entity_name);
-            // println!("entity: {:?}", entity);
+
             let status_effect = build_status_effect(
                 sed,
                 character_id,
@@ -732,12 +783,16 @@ impl EncounterState {
     
         match self.entities.entry(source_id) {
             Entry::Occupied(entry) => entry.into_mut(),
-            Entry::Vacant(entry) => entry.insert(Entity {
-                id: source_id,
-                entity_type: EntityType::Unknown,
-                name: format!("{:x}", source_id),
-                ..Default::default()
-            }),
+            Entry::Vacant(entry) => {
+                let entity = Entity {
+                    id: source_id,
+                    entity_type: EntityType::Unknown,
+                    name: format!("{:x}", source_id),
+                    ..Default::default()
+                };
+
+                entry.insert(entity)
+            },
         }
     }
 
@@ -1004,7 +1059,7 @@ impl EncounterState {
             name: name.clone(),
             class_id: class_id.into(),
             gear_level: truncate_gear_level(gear_level),
-            character_id: character_id,
+            character_id,
             stats: stat_pairs
                 .into_iter()
                 .map(|sp| (sp.stat_type, sp.value))
@@ -1012,8 +1067,8 @@ impl EncounterState {
             ..Default::default()
         };
 
-        self.local_entity_id = player.id;
-        self.local_character_id = player.character_id;
+        self.local_entity_id = player_id;
+        self.local_character_id = character_id;
         self.character_id_to_entity_id.insert(character_id, player_id);
         self.entity_id_to_character_id.insert(player_id, character_id);
         self.local_player_name = Some(player.name.clone());
@@ -1046,6 +1101,62 @@ impl EncounterState {
             );
     
             self.register_status_effect(status_effect);
+        }
+    }
+
+    pub fn on_new_trap(
+        &mut self,
+        object_id: u64,
+        owner_id: u64,
+        skill_id: u32,
+        skill_effect: u32,
+    ) {
+        let trap: Entity = Entity {
+            id: object_id,
+            entity_type: EntityType::Projectile,
+            name: format!("{:x}", object_id),
+            owner_id: owner_id,
+            skill_id: skill_id,
+            skill_effect_id: skill_effect,
+            ..Default::default()
+        };
+        self.entities.insert(trap.id, trap);
+        let is_player = self.id_is_player(owner_id);
+
+        if is_player && skill_id > 0
+        {
+            let key = (owner_id, skill_id);
+            if let Some(timestamp) = self.skill_timestamp.get(&key) {
+                self.projectile_id_to_timestamp.insert(object_id, timestamp);
+            }
+        }
+    }
+
+    pub fn on_new_projectile(
+        &mut self,
+        projectile_id: u64,
+        owner_id: u64,
+        skill_id: u32,
+        skill_effect: u32,
+    ) {
+        let projectile = Entity {
+            id: projectile_id,
+            entity_type: EntityType::Projectile,
+            name: format!("{:x}", projectile_id),
+            owner_id,
+            skill_id,
+            skill_effect_id: skill_effect,
+            ..Default::default()
+        };
+        self.entities.insert(projectile.id, projectile);
+        let is_player = self.id_is_player(owner_id);
+
+        if is_player && skill_id > 0
+        {
+            let key = (owner_id, skill_id);
+            if let Some(timestamp) = self.skill_timestamp.get(&key) {
+                self.projectile_id_to_timestamp.insert(projectile_id, timestamp);
+            }
         }
     }
 
@@ -1090,6 +1201,12 @@ impl EncounterState {
     }
 
     pub fn on_boss_shield(&mut self, target_entity: &Entity, shield: u64) {
+
+        // let dump = self.encounter
+        //     .entities
+        //     .get(&target_entity.name);
+        // println!("{} {:?}", self.encounter.current_boss_name, dump);
+
         if target_entity.entity_type == EntityType::Boss
             && target_entity.name == self.encounter.current_boss_name
         {

@@ -31,26 +31,8 @@ where
                 skill_id
             }
         } = PKTNewTrap::new(&data)?;
-        
-        let trap: Entity = Entity {
-            id: object_id,
-            entity_type: EntityType::Projectile,
-            name: format!("{:x}", object_id),
-            owner_id: owner_id,
-            skill_id: skill_id,
-            skill_effect_id: skill_effect,
-            ..Default::default()
-        };
-        state.entities.insert(trap.id, trap);
-        let is_player = state.id_is_player(owner_id);
 
-        if is_player && skill_id > 0
-        {
-            let key = (owner_id, skill_id);
-            if let Some(timestamp) = state.skill_timestamp.get(&key) {
-                state.projectile_id_to_timestamp.insert(object_id, timestamp);
-            }
-        }
+        state.on_new_trap(object_id, owner_id, skill_id, skill_effect);
 
         Ok(())
     }
@@ -86,6 +68,7 @@ mod tests {
        
         let mut player_template = PLAYER_TEMPLATE_BARD;
         let mut trap_template = TRAP_TEMPLATE_BARD_STIGMA;
+        trap_template.owner_id = player_template.id;
         let (opcode, data) = PacketBuilder::new_trap(&trap_template);
         state_builder.create_player(&player_template);
 

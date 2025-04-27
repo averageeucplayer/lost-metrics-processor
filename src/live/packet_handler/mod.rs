@@ -42,7 +42,6 @@ use hashbrown::HashMap;
 use log::*;
 use lost_metrics_core::models::*;
 use lost_metrics_data::VALID_ZONES;
-use lost_metrics_misc::get_class_from_id;
 use lost_metrics_sniffer_stub::decryption::{DamageEncryptionHandler, DamageEncryptionHandlerTrait};
 use lost_metrics_sniffer_stub::packets::definitions::*;
 use lost_metrics_sniffer_stub::packets::opcodes::Pkt;
