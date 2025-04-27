@@ -27,7 +27,7 @@ jobs:
         continue-on-error: true
         uses: taiki-e/install-action@cargo-llvm-cov
           
-      - run: cargo llvm-cov --ignore-filename-regex '.*(event_emitter|stats_api|settings_manager|local_player_store|register_listeners|test_utils|background_worker|event_listener|file_system|packet_sniffer|region_store|flags|start|register_listeners|heartbeat_api|lost-metrics-core|lost-metrics-data|lost-metrics-misc|lost-metrics-store|lost-metrics-sniffer-stub).*' --summary-only
+      - run: cargo llvm-cov --ignore-filename-regex '.*(event_emitter|stats_api|settings_manager|local_player_store|register_listeners|test_utils|background_worker|event_listener|file_system|packet_sniffer|region_store|flags|start|register_listeners|heartbeat_api|lost-metrics-core|lost-metrics-data|lost-metrics-misc|lost-metrics-store|lost-metrics-sniffer-stub).*' --lcov --output-path lcov.info
 
       - uses: codecov/codecov-action@v5
         continue-on-error: true
