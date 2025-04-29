@@ -29,5 +29,5 @@ lost-metrics-processor = { git = "https://github.com/averageeucplayer/lost-metri
 ## 🧪 Coverage
 
 ```sh
-cargo llvm-cov --summary-only 
+cargo llvm-cov cargo llvm-cov --ignore-filename-regex '.*(event_emitter|stats_api|settings_manager|local_player_store|register_listeners|test_utils|background_worker|event_listener|file_system|packet_sniffer|region_store|flags|start|register_listeners|heartbeat_api|lost-metrics-core|lost-metrics-data|lost-metrics-misc|lost-metrics-store|lost-metrics-sniffer-stub).*'  --summary-only 
 ```
